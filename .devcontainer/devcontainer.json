@@ -1,0 +1,38 @@
+{
+  "name": "basis-bom",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "dev",
+  "workspaceFolder": "/workspaces/ML_Server",
+  "shutdownAction": "stopCompose",
+  "forwardPorts": [8888, 5432],
+  "postCreateCommand": "pip install -e \".[dev]\" && python -m ipykernel install --user --name basis-bom && basis-bom db init --fixtures",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-toolsai.jupyter",
+        "ms-toolsai.jupyter-keymap",
+        "charliermarsh.ruff",
+        "mtxr.sqltools",
+        "mtxr.sqltools-driver-pg",
+        "congyiwu.vscode-jupytext"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "jupyter.notebookFileRoot": "${workspaceFolder}",
+        "jupyter.defaultKernel": "basis-bom",
+        "sqltools.connections": [
+          {
+            "name": "basis (dev)",
+            "driver": "PostgreSQL",
+            "server": "db",
+            "port": 5432,
+            "database": "basis",
+            "username": "basis",
+            "password": "basis"
+          }
+        ]
+      }
+    }
+  }
+}

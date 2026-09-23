@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "basis_bom"
+version = "0.1.0"
+description = "Basis-Stückliste aus SAP-Exporttabellen in Postgres (Prototyp)"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas",
+    "sqlalchemy",
+    "psycopg[binary]",
+    "typer",
+    "pydantic",
+    "openpyxl",  # XLSX-Exporte lesen, Review-Blätter schreiben
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "jupyterlab", "jupytext", "ruff", "ipykernel"]
+
+[project.scripts]
+basis-bom = "basis_bom.cli:app"
+
+[tool.setuptools]
+packages = ["basis_bom"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+extend-exclude = ["legacy", "notebooks/*.ipynb"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"notebooks/*.py" = ["E402", "B018"]
+
+[tool.jupytext]
+formats = "notebooks///ipynb,notebooks///py:percent"

@@ -1,0 +1,42 @@
+services:
+  dev:
+    image: mcr.microsoft.com/devcontainers/python:3.12
+    command: sleep infinity
+    volumes:
+      - ..:/workspaces/ML_Server:cached
+      # Manuelle SAP-Exporte (docs/EXPORTE.md), nur lesend. Pfad in .devcontainer/.env (EXPORTS_DIR).
+      - ${EXPORTS_DIR:-../export}:/data/exports:ro
+    environment:
+      DATABASE_URL: postgresql://basis:basis@db:5432/basis
+      EXPORTS_DIR: /data/exports
+      BASIS_BOM_MODE: dev
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: basis
+      POSTGRES_PASSWORD: basis
+      POSTGRES_DB: basis
+    # STPO-CSV hat ~1 GB: großzügigere Puffer als der Default
+    command:
+      - postgres
+      - -c
+      - shared_buffers=1GB
+      - -c
+      - work_mem=256MB
+      - -c
+      - maintenance_work_mem=512MB
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U basis -d basis"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  pgdata:

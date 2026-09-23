@@ -39,3 +39,24 @@ synthetischen Fixtures (`tests/fixtures/`) gebaut und getestet. Offen, bis jeman
   (englisches Format). Falls die STPO-CSV Tausenderpunkte ohne Nachkommastellen enthält, bitte melden.
 - **Q8 STAS.** Hat eine Stückliste STAS-Einträge, gelten nur die Knoten, deren neueste STAS-Version für die
   Alternative gültig ist. Stücklisten ganz ohne STAS-Einträge verwenden alle gültigen STPO-Positionen.
+
+## Schema und Seeds (Phase 3)
+
+- **Q9 Bedeutung des Alias-Status.** D8 verlangt drei Zustände auch für Aliasse. Umgesetzt: `BASIS` = Zuordnung
+  bestätigt, `OFFEN`/`NICHT_BASIS` = nicht verwendbar → `manuell_prüfen`. `OPTIK` und `ARM` sind als `OFFEN`
+  ohne Merkmal geseedet (D6: nicht raten). Unbekannte Kürzel landen automatisch als `OFFEN`.
+- **Q10 Geratene Ränge aus der Set-Reihenfolge.** Python-Sets haben keine Ordnung; der Rang folgt der
+  Reihenfolge im Quelltext von `MANUAL_DEFAULTS`. Bitte je Merkmal bestätigen oder umsortieren:
+  - `FUNKTION`: 1 `X`, 2 `MANUEL`, 3 `BK` (offen: `WA1`, `VZMO`)
+  - `RUECKEN_FUNK`: 1 `X`, 2 `ST` (offen: `KV`)
+  - `ELEKTRO`: 1 `X` (offen: `FA`); `AKKU`: 1 `X`; `ARM_L`/`ARM_R`: 1 `X` (offen: `LAL`)
+  - `RUECKEN_OPTIK` 1 `A`, `ARM_OPTIK` 1 `1`, `SITZQUALI` 1 `HR` stammen aus `DEFAULT_PROFILE` (eindeutig).
+  - `MOTOR`, `GASDRUCK`, `FUSS`, `3_FUSS`, `SITZTIEFE`: im Legacy-Skript ohne Default → keine Seeds; jede
+    Bedingung auf diese Merkmale führt zu `kein_rang_fuer:<M>` bis der Fachbereich Ränge setzt.
+- **Q11 Systemregeln nicht geseedet.** Das Legacy-Skript hat `PP4000_…`, `PP_…`, `WERK_…`, `FUNK_RUECK_ZE` und
+  rein numerische Namen per Präfix-Heuristik *eingeschlossen*. D7 verbietet die Heuristik; diese Namen landen
+  jetzt beim ersten Lauf als `OFFEN` (Merkmal = Name, Wert `vorhanden`) und führen bis zur Entscheidung zu
+  `manuell_prüfen`. Sollen die bekannten Systemregeln vorab als `BASIS` gesetzt werden?
+- **Q12 Zusätzliche Spalten.** `review.menge` (Vergleichsgröße der Regression, D23), `review.lauf_id`,
+  `aufloesung.lfd/posnr/pfad` (Reihenfolge, Pfad für D16) und `basis_bom.ladeprotokoll` sind über den Plan hinaus
+  angelegt.

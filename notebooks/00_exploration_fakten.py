@@ -26,3 +26,63 @@ from basis_bom import db
 eng = db.engine()
 with eng.connect() as con:
     print("SELECT 1 →", con.execute(sa.text("SELECT 1")).scalar())
+
+# %% [markdown]
+# ## Geladene Tabellen und Stichtag
+
+# %%
+import pandas as pd
+
+from basis_bom import fakten
+from basis_bom.source import SapSource
+
+src = SapSource.from_db(eng)
+print("Stichtag:", src.stichtag, "| Marker:", sorted(src.marker))
+for w in src.warnungen:
+    print("WARNUNG:", w)
+pd.DataFrame(
+    [(t, len(src.roh(t)), src.export_daten.get(t)) for t in sorted(src.export_daten)],
+    columns=["tabelle", "zeilen", "export_datum"],
+)
+
+# %% [markdown]
+# ## F1–F6 als Zahlen
+
+# %%
+fakten.uebersicht(src)
+
+# %% [markdown]
+# ### F1 – Mehrfachzeilen in CUKB pro KNNUM
+
+# %%
+fakten.f1_cukb_mehrfach(src).head(30)
+
+# %% [markdown]
+# ### F2 – Negationen in Bedingungsnamen
+
+# %%
+fakten.f2_negationen(src)
+
+# %% [markdown]
+# ### F3 – Alternativpositionen (ALPGR/ALPRF)
+
+# %%
+fakten.f3_alternativpositionen(src)
+
+# %% [markdown]
+# ### F4 – KNART-Verteilung an STPO-Positionen
+
+# %%
+fakten.f4_knart_verteilung(src)
+
+# %% [markdown]
+# ### F5 – Materialien mit mehr als einem STLNR (D15)
+
+# %%
+fakten.f5_mehrere_stlnr(src)
+
+# %% [markdown]
+# ### F6 – BMENG ≠ 1
+
+# %%
+fakten.f6_bmeng(src)

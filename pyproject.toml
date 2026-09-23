@@ -41,3 +41,6 @@ ignore = ["E501"]
 
 [tool.jupytext]
 formats = "notebooks///ipynb,notebooks///py:percent"
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["typer.Option", "typer.Argument"]

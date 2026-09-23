@@ -58,3 +58,18 @@ def init_views(eng: Engine) -> None:
 def table_exists(eng: Engine, schema: str, table: str) -> bool:
     with eng.connect() as con:
         return con.execute(sa.text("SELECT to_regclass(:n)"), {"n": f"{schema}.{table}"}).scalar() is not None
+
+
+def kanonische_merkmale(eng: Engine) -> list[str]:
+    """Kanonische Merkmalnamen aus der Alias-Tabelle (D6), sonst die Liste aus EXPORT-PLAN Phase 3."""
+    from .loader import MERKMALLISTE_DEFAULT
+
+    if not table_exists(eng, "basis_bom", "alias"):
+        return list(MERKMALLISTE_DEFAULT)
+    with eng.connect() as con:
+        rows = con.execute(
+            sa.text(
+                "SELECT DISTINCT merkmal FROM basis_bom.alias WHERE merkmal IS NOT NULL AND gueltig_bis IS NULL"
+            )
+        ).scalars()
+        return sorted(set(rows) | set(MERKMALLISTE_DEFAULT))

@@ -173,3 +173,25 @@ def trage_alias_offen_ein(eng: Engine, aliasse: Iterable[str], geaendert_von: st
             {"a": werte, "v": geaendert_von},
         )
         return res.rowcount
+
+
+def seed_regelstand() -> Regelstand:
+    """Regelstand aus den Seed-Dateien (ohne DB) – für Tests und Notebooks ohne Datenbank."""
+    import re
+
+    from . import config
+
+    def werte(datei: str) -> list[tuple]:
+        text = (config.SQL_DIR / "schema" / datei).read_text(encoding="utf-8")
+        zeilen = re.findall(r"^\s*\((.*)\),?$", text, flags=re.M)
+        out = []
+        for z in zeilen:
+            felder = [f.strip() for f in re.findall(r"'(?:[^']|'')*'|NULL|\d+", z)]
+            out.append(
+                tuple(None if f == "NULL" else int(f) if f.isdigit() else f.strip("'") for f in felder)
+            )
+        return out
+
+    aliasse = [Alias(a, m, s) for a, m, s in werte("900_seed_alias.sql")]
+    regeln = [Regel(m, w, s, r) for m, w, s, r, _ in werte("910_seed_regel.sql")]
+    return Regelstand.aus_listen(regeln, aliasse)

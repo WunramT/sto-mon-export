@@ -60,3 +60,16 @@ synthetischen Fixtures (`tests/fixtures/`) gebaut und getestet. Offen, bis jeman
 - **Q12 Zusätzliche Spalten.** `review.menge` (Vergleichsgröße der Regression, D23), `review.lauf_id`,
   `aufloesung.lfd/posnr/pfad` (Reihenfolge, Pfad für D16) und `basis_bom.ladeprotokoll` sind über den Plan hinaus
   angelegt.
+
+## Parser (Phase 4)
+
+- **Q13 `ELEKTRO=FAL_SH48_SQ=HR`.** Das Legacy-Skript liefert `ELEKTRO='FAL_SH48'`. Der neue Parser liest
+  `SH48` als Sitzhöhe 48 → `ELEKTRO=FAL`, `SITZHOEHE=48`, `SITZQUALI=HR`. Richtig so?
+- **Q14 Zweistellige Zahl = SITZHOEHE.** Aus dem Legacy-Skript übernommen (`…_2_45` → `SITZHOEHE=45`), ebenso
+  `SH48`/`SITZH46` (Sitzhöhen-Alias direkt mit Ziffern). Das ist eine Heuristik im Code; soll sie bleiben?
+- **Q15 Negation (F2).** Bis F2 geklärt ist, sind Namen mit `<>`, `!=`, `NICHT`, `NOT` nicht parsbar →
+  `manuell_prüfen`. Notebook 00 listet die betroffenen Namen.
+- **Q16 Systemregel-Kandidat.** „Ein Name ohne einziges `=`“ (nach Normalisierung von `ALIAS WERT` zu
+  `ALIAS=WERT`) ist Systemregel-Kandidat. Damit wird auch ein alleinstehendes `SITZQ_HR` (ohne `=`) zu einem
+  Pseudo-Merkmal `SITZQ_HR` = `vorhanden` statt zu `SITZQUALI=HR`. Namen mit Leerzeichen, die nicht die Form
+  `ALIAS WERT` haben, sind nicht parsbar.

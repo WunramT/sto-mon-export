@@ -116,3 +116,32 @@ def fuehre_aufloesung_aus(
         beende_lauf(eng, lauf_id, "fehler", {"fehler": repr(exc)})
         raise
     return lauf_id, erg
+
+
+def letzter_lauf_id(eng: Engine) -> int | None:
+    with eng.connect() as con:
+        return con.execute(sa.text("SELECT lauf_id FROM basis_bom.letzter_lauf")).scalar()
+
+
+def lade_aufloesung(eng: Engine, lauf_id: int, matnr: Iterable[str] | None = None):
+    """Ergebnis eines Laufs als DataFrame (Spalten wie explode.SPALTEN, spur als dict)."""
+    import pandas as pd
+
+    sql = f"SELECT {', '.join(SPALTEN)} FROM basis_bom.aufloesung WHERE lauf_id = :l"
+    params: dict = {"l": lauf_id}
+    if matnr:
+        sql += " AND root_matnr = ANY(:m)"
+        params["m"] = [m.strip().lstrip("0") for m in matnr]
+    with eng.connect() as con:
+        df = pd.DataFrame(con.execute(sa.text(sql + " ORDER BY root_matnr, lfd"), params).mappings().all(),
+                          columns=SPALTEN)  # fmt: skip
+    for col in ("menge", "menge_kum"):
+        df[col] = pd.to_numeric(df[col])
+    return df
+
+
+def lade_statistik(eng: Engine, lauf_id: int) -> dict:
+    with eng.connect() as con:
+        return con.execute(
+            sa.text("SELECT statistik FROM basis_bom.lauf WHERE lauf_id = :l"), {"l": lauf_id}
+        ).scalar()

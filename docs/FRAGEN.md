@@ -110,3 +110,21 @@ synthetischen Fixtures (`tests/fixtures/`) gebaut und getestet. Offen, bis jeman
   verschiedene STLNR. Mehrere Alternativen derselben Stückliste sind nicht weiter behandelt.
 - **Q28 Zyklen** (ein Material taucht im eigenen Pfad wieder auf) → `manuell_prüfen`, keine weitere Auflösung;
   maximale Tiefe 20.
+
+## Reports, Regression, Export (Phase 7)
+
+- **Q29 Menge im SAP-Format-Export.** „Exakt wie `export_grundversion_sap_format`“ heißt: Positionsmenge der
+  Stücklistenzeile (`MENGE`), nicht die kumulierte Menge nach D17. Die kumulierte Menge steht in
+  `aufloesung.menge_kum`, im Review-Blatt und in der View `summe_material`. Umschalten wäre eine Zeile
+  (`export.MENGE_SPALTE`). Welche Menge braucht das ML-Training?
+- **Q30 Reihenfolge im Export** wie im Legacy-Skript: pro Root nach Ebene, dann Parent-Material sortiert.
+  Datei: `;`-getrennt, UTF-8 ohne BOM, Zeilenende `\n`. Die Legacy-Docstring-Spalte „Materialkurztext DE“ wurde
+  dort nie befüllt; jetzt kommt sie aus MAKT.
+- **Q31 Urteile im Review-Blatt** beziehen sich auf den Status der Zeile (siehe Blatt „Hinweise“): `richtig` =
+  Status stimmt; `fehlt` = gehört rein, ist aber nicht drin; `gehoert_nicht_rein` = ist drin, gehört nicht rein.
+  Ein Root gilt als bestätigt, wenn *jede* Zeile `richtig` ist – auch ausgeschlossene. Passt das?
+- **Q32 Regression** vergleicht Material, Parent und kumulierte Menge (6 Nachkommastellen) als Multimenge gegen
+  den jeweils letzten Review-Import eines bestätigten Roots. Ein bestätigtes Root, das im Lauf fehlt (z. B.
+  `run --matnr` mit anderer Auswahl), wird als `nicht_im_lauf` gemeldet, nicht als rot.
+- **Q33 `review-export`** schreibt pro Root eine XLSX nach `out/lauf_<id>/<matnr>/`; `export` schreibt dorthin
+  auch die SAP-Format-Datei. `out/` ist nicht versioniert.

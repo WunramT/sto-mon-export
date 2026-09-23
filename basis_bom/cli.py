@@ -46,5 +46,101 @@ def db_init(
     typer.echo("db init: ok")
 
 
+def _lauf(lauf_id: int | None) -> int:
+    from . import lauf
+
+    lid = lauf_id or lauf.letzter_lauf_id(db.engine())
+    if lid is None:
+        raise typer.BadParameter("kein abgeschlossener Lauf vorhanden – zuerst `basis-bom run`")
+    return lid
+
+
+def _ausgabe(lauf_id: int, out: Path | None) -> Path:
+    return (out or config.out_dir()) / f"lauf_{lauf_id}"
+
+
+@app.command()
+def check() -> None:
+    """Konsistenz- und Exportprüfungen (sql/checks); Prototyp: nur Meldung."""
+    from . import checks
+
+    df = checks.pruefe(db.engine())
+    for r in df.itertuples():
+        zeichen = {True: "OK  ", False: "ROT ", None: "--  "}[r.ok if r.ok in (True, False) else None]
+        typer.echo(f"{zeichen}{r.pruefung}: {r.detail}")
+    rot = int((df["ok"] == False).sum())  # noqa: E712
+    typer.echo(f"{len(df)} Prüfungen, {rot} rot")
+
+
+@app.command()
+def export(
+    lauf_id: int | None = typer.Option(None, "--lauf", help="Default: letzter Lauf"),
+    matnr: list[str] | None = typer.Option(None, "--matnr"),
+    out: Path | None = typer.Option(None, "--out"),
+) -> None:
+    """SAP-Format-Export (D19) pro Root-Material und gesamt."""
+    from . import export as exp
+    from . import lauf
+    from .source import SapSource
+
+    eng = db.engine()
+    lid = _lauf(lauf_id)
+    df = lauf.lade_aufloesung(eng, lid, matnr)
+    for p in exp.exportiere(df, SapSource.from_db(eng), _ausgabe(lid, out)):
+        typer.echo(f"Export: {p}")
+
+
+@app.command("review-export")
+def review_export(
+    matnr: list[str] = typer.Argument(..., help="Root-Materialien"),
+    lauf_id: int | None = typer.Option(None, "--lauf", help="Default: letzter Lauf"),
+    out: Path | None = typer.Option(None, "--out"),
+) -> None:
+    """Review-Blatt (XLSX) pro Root-Material für den Fachbereich (D24)."""
+    from . import lauf, review
+    from .source import SapSource
+
+    eng = db.engine()
+    lid = _lauf(lauf_id)
+    df = lauf.lade_aufloesung(eng, lid, matnr)
+    src, stat = SapSource.from_db(eng), lauf.lade_statistik(eng, lid)
+    for m in matnr:
+        m = m.strip().lstrip("0")
+        if df[df["root_matnr"] == m].empty:
+            typer.echo(f"{m}: nicht im Lauf {lid}", err=True)
+            continue
+        p = review.review_blatt(df, src, lid, m, stat, _ausgabe(lid, out) / m / f"review_{m}.xlsx")
+        typer.echo(f"Review-Blatt: {p}")
+
+
+@app.command("review-import")
+def review_import(
+    datei: list[Path] = typer.Argument(..., exists=True, dir_okay=False),
+    reviewer: str = typer.Option(..., "--reviewer", help="Name des Prüfers"),
+) -> None:
+    """Ausgefüllte Review-Blätter nach `basis_bom.review` (vollständig richtig → `bestaetigt`)."""
+    from . import review
+
+    for d in datei:
+        erg = review.importiere(db.engine(), d, reviewer)
+        typer.echo(f"{d.name}: {erg['zeilen']} Urteile, {erg['ohne_urteil']} ohne Urteil, bestätigt: "
+                   f"{', '.join(erg['bestaetigt']) or '–'}")  # fmt: skip
+
+
+@app.command()
+def regress(lauf_id: int | None = typer.Option(None, "--lauf", help="Default: letzter Lauf")) -> None:
+    """Abgleich gegen bestätigte Reviews (D23). Prototyp: meldet nur."""
+    from . import regress as reg
+
+    lid = _lauf(lauf_id)
+    df = reg.regress(db.engine(), lid)
+    if df.empty:
+        typer.echo(f"Regression Lauf {lid}: grün (oder nichts bestätigt)")
+        return
+    typer.echo(df.to_string(index=False))
+    rot = df[df["art"] != "nicht_im_lauf"]
+    typer.echo(f"Regression Lauf {lid}: {'ROT' if len(rot) else 'grün'} – {len(rot)} Abweichungen")
+
+
 if __name__ == "__main__":
     app()

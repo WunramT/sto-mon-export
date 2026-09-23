@@ -13,6 +13,11 @@ SYMBOL = {
 EINGEKLAPPT = {AUSGESCHLOSSEN, AUSGESCHLOSSEN_VERERBT, IGNORIERT}
 
 
+def pfad_sortierung(pfad: str) -> str:
+    """Sortierschlüssel für Baumreihenfolge: Positionsnummern je Ebene aufgefüllt."""
+    return "/".join(seg.split(":")[0].zfill(8) for seg in pfad.split("/")[1:])
+
+
 def spur_lesbar(spur: dict) -> str:
     """Spur (D18) als kurzer Text: Beziehungen, Prüfungen, gewählte Rangwerte."""
     teile = []
@@ -33,7 +38,7 @@ def spur_lesbar(spur: dict) -> str:
 def baum_text(df: pd.DataFrame, eingeklappt: bool = True, kurztext: dict | None = None) -> str:
     """Baum in Pfad-Reihenfolge. Ausgeschlossene Zweige eingeklappt: nur die oberste Zeile, mit Zähler."""
     kurztext = kurztext or {}
-    d = df.sort_values("pfad", key=lambda s: s.str.split("/").map(lambda x: [p.split(":")[0] for p in x]))
+    d = df.assign(_s=df["pfad"].map(pfad_sortierung)).sort_values("_s", kind="stable")
     zeilen, zu = [], None
     for _, z in d.iterrows():
         if eingeklappt and zu is not None and z["pfad"].startswith(zu + "/"):

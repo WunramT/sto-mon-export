@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS basis_bom.review (
     menge        numeric,  -- menge_kum zum Zeitpunkt des Reviews, Vergleichsgröße der Regression (D23)
     urteil       text NOT NULL CHECK (urteil IN ('richtig', 'fehlt', 'gehoert_nicht_rein')),
     kommentar    text,
+    status       text,  -- Status der Zeile im Review-Blatt; „richtig“ bezieht sich darauf
     reviewer     text NOT NULL,
     datum        date NOT NULL DEFAULT current_date,
     lauf_id      bigint,  -- Lauf, aus dem das Review-Blatt erzeugt wurde
@@ -20,3 +21,5 @@ CREATE TABLE IF NOT EXISTS basis_bom.bestaetigt (
     bestaetigt_von text NOT NULL,
     datum          date NOT NULL DEFAULT current_date
 );
+
+ALTER TABLE basis_bom.review ADD COLUMN IF NOT EXISTS status text;

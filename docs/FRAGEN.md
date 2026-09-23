@@ -73,3 +73,19 @@ synthetischen Fixtures (`tests/fixtures/`) gebaut und getestet. Offen, bis jeman
   `ALIAS=WERT`) ist Systemregel-Kandidat. Damit wird auch ein alleinstehendes `SITZQ_HR` (ohne `=`) zu einem
   Pseudo-Merkmal `SITZQ_HR` = `vorhanden` statt zu `SITZQUALI=HR`. Namen mit Leerzeichen, die nicht die Form
   `ALIAS WERT` haben, sind nicht parsbar.
+
+## Ranking (Phase 5)
+
+- **Q17 OFFEN-Wert neben gewähltem Rangwert.** Beispiel: Ebene mit `SQ=HR` (BASIS, Rang 1) und `SQ=FK`
+  (OFFEN). D2/D4 sagen: HR gewinnt, die FK-Position passt nicht → `ausgeschlossen`. D8 sagt: OFFEN führt nie zu
+  stillem Ausschluss. Umgesetzt: `ausgeschlossen`, aber sichtbar – Grund nennt den OFFEN-Wert, die Stückliste
+  trägt den Marker `offen_neben_rang:SITZQUALI` (View `offene_faelle`). Soll stattdessen `manuell_prüfen` gelten?
+  Das würde mit dem Übergang `cawn_fehlt` (alle beobachteten Werte OFFEN) fast jede Variantenposition manuell
+  machen.
+- **Q18 Multi-Wert mit unbekanntem Teil (D5)** führt nur dann zu `manuell_prüfen`, wenn der gewählte Wert
+  enthalten ist (`HR/XX` bei HR). Passt der Ausdruck ohnehin nicht (`BS/XX` bei HR), bleibt es `ausgeschlossen`
+  mit Hinweis im Grund. „Unbekannt“ heißt: nicht in der Regeltabelle oder Status OFFEN.
+- **Q19 SITZHOEHE (D3).** Nur Zahlenwerte konkurrieren; `NICHT_BASIS`-Werte sind ausgenommen, nicht-numerische
+  Werte führen zu `kein_rang_fuer:SITZHOEHE`.
+- **Q20 Systemregel mit NICHT_BASIS.** Ein Pseudo-Merkmal hat nur den Wert `vorhanden`. Wird er `NICHT_BASIS`
+  gesetzt, greift D4 wörtlich (`kein_rang_fuer` → `manuell_prüfen`), nicht `ausgeschlossen`. Gewünscht?

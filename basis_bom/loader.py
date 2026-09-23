@@ -214,12 +214,39 @@ def normalisiere(df: pd.DataFrame, tabelle: str, prot: Protokoll) -> pd.DataFram
     for col in NULLEN_WEG & set(df.columns):
         if prot.fuehrende_nullen is None and col in {"MATNR", "IDNRK", "STLNR"}:
             prot.fuehrende_nullen = bool(df[col].str.match(r"^0\d").any())
-        df[col] = df[col].map(ohne_nullen)
+        df[col] = ohne_nullen_serie(df[col])
     for col in DATUMSSPALTEN & set(df.columns):
-        df[col] = df[col].map(parse_datum)
+        df[col] = datum_serie(df[col])
     for col in ZAHLSPALTEN & set(df.columns):
-        df[col] = df[col].map(parse_zahl)
+        df[col] = zahl_serie(df[col])
     return df
+
+
+# Vektorisierte Fassungen von ohne_nullen/parse_datum/parse_zahl (STPO-CSV hat ~1 GB).
+
+
+def ohne_nullen_serie(s: pd.Series) -> pd.Series:
+    s = s.str.replace(r"^(\d+)\.0+$", r"\1", regex=True)
+    ziffern = s.str.fullmatch(r"\d+").fillna(False).astype(bool)
+    return s.where(~ziffern, s.str.lstrip("0").replace("", "0"))
+
+
+def datum_serie(s: pd.Series) -> pd.Series:
+    s = s.astype(str).str.strip()
+    ergebnis = pd.Series(pd.NaT, index=s.index, dtype="datetime64[ns]")
+    for muster, laenge, fmt in ((r"\d{8}", 8, "%Y%m%d"), (r"\d{4}-\d{2}-\d{2}", 10, "%Y-%m-%d"),
+                                (r"\d{2}\.\d{2}\.\d{4}", 10, "%d.%m.%Y")):  # fmt: skip
+        maske = ergebnis.isna() & s.str.match(muster).fillna(False).astype(bool)
+        if maske.any():
+            ergebnis[maske] = pd.to_datetime(s[maske].str[:laenge], format=fmt, errors="coerce")
+    return ergebnis.dt.date.where(ergebnis.notna(), None).astype(object)
+
+
+def zahl_serie(s: pd.Series) -> pd.Series:
+    s = s.astype(str).str.strip()
+    komma = s.str.contains(",", regex=False)
+    s = s.where(~komma, s.str.replace(".", "", regex=False).str.replace(",", ".", regex=False))
+    return pd.to_numeric(s.replace("", None), errors="coerce")
 
 
 # ---------------------------------------------------------------------------------------------------------
@@ -251,7 +278,7 @@ def lade_quellen(
     erg = Ladeergebnis()
     werks, stlan = config.WERKS, config.STLAN
 
-    def lies(tab: str, chunksize: int | None = None, filt=None) -> pd.DataFrame | None:
+    def lies(tab: str, chunksize: int | None = None, filt=None, vorfilter=None) -> pd.DataFrame | None:
         q = quellen.get(tab)
         if q is None:
             log.warning("%s: keine Quelle – Ersatzregel laut EXPORT-PLAN „Übergang“", tab)
@@ -261,6 +288,11 @@ def lade_quellen(
         teile = []
         for roh in lese_roh(q.pfad, prot, chunksize):
             prot.zeilen_roh += len(roh)
+            if vorfilter:  # Schlüsselspalte vor der vollen Normalisierung filtern (Laufzeit bei STPO)
+                spalte, werte = vorfilter
+                roh_col = next((c for c in roh.columns if headers.technischer_name(tab, c) == spalte), None)
+                if roh_col is not None:
+                    roh = roh[ohne_nullen_serie(roh[roh_col].astype(str).str.strip()).isin(werte)]
             df = normalisiere(roh, tab, prot)
             teile.append(filt(df) if filt else df)
         df = pd.concat(teile, ignore_index=True) if teile else pd.DataFrame(columns=prot.spalten)
@@ -279,7 +311,7 @@ def lade_quellen(
 
     lies("STKO", filt=lambda d: _filter(d, STLNR=S))
     lies("STAS", filt=lambda d: _filter(d, STLNR=S))
-    stpo = lies("STPO", chunksize=STPO_CHUNK, filt=lambda d: _filter(d, STLNR=S))
+    stpo = lies("STPO", chunksize=STPO_CHUNK, filt=lambda d: _filter(d, STLNR=S), vorfilter=("STLNR", S))
     if stpo is None:
         raise ValueError("STPO fehlt")
     erg.schluessel["P_idnrk"] = set(stpo["IDNRK"]) - {""}

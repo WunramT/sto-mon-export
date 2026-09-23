@@ -46,6 +46,37 @@ def db_init(
     typer.echo("db init: ok")
 
 
+@app.command()
+def run(
+    matnr: list[str] | None = typer.Option(None, "--matnr", help="nur diese Root-Materialien (mehrfach)"),
+    out: Path | None = typer.Option(None, "--out", help="Ausgabeordner (Default: out/)"),
+    ohne_review: bool = typer.Option(False, "--ohne-review", help="keine Review-Blätter schreiben"),
+) -> None:
+    """Prototyp-Lauf (D23): check → Auflösung → regress (nur Meldung) → export + Review-Blätter."""
+    from . import pipeline
+
+    b = pipeline.run(db.engine(), matnr, out, review_blaetter=not ohne_review)
+    rot = b.pruefungen[b.pruefungen["ok"] == False]  # noqa: E712
+    typer.echo(f"Lauf {b.lauf_id}: Prüfungen {len(b.pruefungen)} ({len(rot)} rot)")
+    for r in rot.itertuples():
+        typer.echo(f"  ROT {r.pruefung}: {r.detail}")
+    st = b.statistik
+    typer.echo(
+        f"Auflösung: {st['roots_aufgeloest']} Root-Materialien, {st['positionen']} Positionen {st['status']}"
+    )
+    for u in st["roots_uebersprungen"]:
+        typer.echo(f"  übersprungen {u['matnr']}: {u['grund']}")
+    typer.echo(f"Marker: {', '.join(st['marker']) or '–'}; Ebenen-Marker: {st['ebene_marker']}")
+    for w in st["warnungen"]:
+        typer.echo(f"  WARNUNG {w}")
+    rot_reg = b.regression[b.regression["art"] != "nicht_im_lauf"] if not b.regression.empty else b.regression
+    typer.echo(
+        f"Regression: {'ROT, ' + str(len(rot_reg)) + ' Abweichungen' if len(rot_reg) else 'grün/keine'}"
+    )
+    typer.echo(f"Dateien ({len(b.dateien)}): {b.dateien[0].parent if b.dateien else '–'}")
+    typer.echo("Zeiten: " + ", ".join(f"{k} {v:.1f}s" for k, v in b.sekunden.items()))
+
+
 def _lauf(lauf_id: int | None) -> int:
     from . import lauf
 

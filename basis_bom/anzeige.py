@@ -57,3 +57,32 @@ def baum_text(df: pd.DataFrame, eingeklappt: bool = True, kurztext: dict | None 
             f"{text} {menge} [{z['status']}] {z['grund']}{n}".rstrip()
         )
     return "\n".join(zeilen)
+
+
+def baum_html(df: pd.DataFrame, kurztext: dict | None = None) -> str:
+    """Baum als verschachtelte <details>: ausgeschlossene Zweige zugeklappt, sonst offen (Notebook 90)."""
+    from html import escape
+
+    kurztext = kurztext or {}
+    d = df.assign(_s=df["pfad"].map(pfad_sortierung)).sort_values("_s", kind="stable")
+    kinder: dict[str, list] = {}
+    for _, z in d.iterrows():
+        kinder.setdefault(z["pfad"].rsplit("/", 1)[0], []).append(z)
+    farbe = {"basis": "#1a7f37", "unbedingt": "#1a7f37", "manuell_prüfen": "#9a6700",
+             "unterhalb_manuell": "#9a6700"}  # fmt: skip
+
+    def knoten(z) -> str:
+        menge = "" if pd.isna(z["menge_kum"]) else f"{z['menge_kum']:g} {escape(str(z['meins']))}"
+        zeile = (f"<span style='color:{farbe.get(z['status'], '#888')}'>{SYMBOL.get(z['status'], '')} "
+                 f"<b>{escape(str(z['posnr']))} {escape(str(z['matnr']) or '(ohne Material)')}</b> "
+                 f"{escape(kurztext.get(z['matnr'], ''))} {menge} [{escape(z['status'])}]</span> "
+                 f"<small>{escape(str(z['grund'] or ''))}</small>")  # fmt: skip
+        unter = kinder.get(z["pfad"], [])
+        if not unter:
+            return f"<div style='margin-left:1.2em'>{zeile}</div>"
+        offen = "" if z["status"] in EINGEKLAPPT else " open"
+        inhalt = "".join(knoten(k) for k in unter)
+        return f"<details{offen} style='margin-left:1.2em'><summary>{zeile} ({len(unter)})</summary>{inhalt}</details>"
+
+    wurzeln = [p for p in kinder if "/" not in p]
+    return "".join(knoten(z) for w in wurzeln for z in kinder[w])

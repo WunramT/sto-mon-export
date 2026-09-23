@@ -128,3 +128,9 @@ synthetischen Fixtures (`tests/fixtures/`) gebaut und getestet. Offen, bis jeman
   `run --matnr` mit anderer Auswahl), wird als `nicht_im_lauf` gemeldet, nicht als rot.
 - **Q33 `review-export`** schreibt pro Root eine XLSX nach `out/lauf_<id>/<matnr>/`; `export` schreibt dorthin
   auch die SAP-Format-Datei. `out/` ist nicht versioniert.
+
+## Debug-Notebook (Phase 9)
+
+- **Q34** `notebooks/90_debug_material.py` löst mit dem *aktuellen* Regelstand neu auf (ohne zu speichern), damit
+  Regeländerungen sofort sichtbar sind. Soll es stattdessen einen gespeicherten Lauf zeigen?
+- Getestet für das Fixture-Root `90000001`; ein echtes Material steht aus (keine Exporte in dieser Umgebung).

@@ -89,3 +89,24 @@ synthetischen Fixtures (`tests/fixtures/`) gebaut und getestet. Offen, bis jeman
   Werte führen zu `kein_rang_fuer:SITZHOEHE`.
 - **Q20 Systemregel mit NICHT_BASIS.** Ein Pseudo-Merkmal hat nur den Wert `vorhanden`. Wird er `NICHT_BASIS`
   gesetzt, greift D4 wörtlich (`kein_rang_fuer` → `manuell_prüfen`), nicht `ausgeschlossen`. Gewünscht?
+
+## Auflösung (Phase 6)
+
+- **Q21 Vererbung unter `manuell_prüfen` (D12).** Kinder erhalten `unterhalb_manuell`, der Grund nennt die
+  eigene Bewertung. Ausnahme: eine Kindposition, die selbst `ausgeschlossen` ist, bleibt `ausgeschlossen` (und
+  vererbt das an ihre Kinder), `ignoriert` bleibt `ignoriert`. Gewünscht?
+- **Q22 Ausgeschlossene Zweige werden vollständig aufgelöst**, damit die Kinder als `ausgeschlossen_vererbt`
+  sichtbar sind (D12, D18). Bei großen Variantenbäumen kann das viele Zeilen erzeugen; abschaltbar über
+  `Optionen(vererbt_aufloesen=False)`.
+- **Q23 Positionstypen außer L/N/K/D/T** (z. B. `R`, `I`) → `manuell_prüfen` mit Grund, keine Auflösung.
+- **Q24 Datenlücken an Bedingungen.** `KNOBJ` ohne jede CUOB-Zeile → `manuell_prüfen` („Datenfehler“).
+  `KNOBJ`, dessen Zuordnungen alle gelöscht sind → `unbedingt`. `KNNUM` ohne CUKB-Zeile → `manuell_prüfen`;
+  `KNNUM` mit nur gelöschten/zukünftigen/nicht freigegebenen Versionen → wirkt nicht (D14).
+- **Q25 D15 bei Baugruppen.** Hat eine Komponente mehrere STLNR, wird sie nicht weiter aufgelöst und die Position
+  `manuell_prüfen`. Root-Materialien mit D15-Verstoß werden übersprungen (Statistik des Laufs).
+- **Q26 Stammdatenprüfung (D22).** Root ohne MARA-Zeile oder mit `KZKFG ≠ X` wird übersprungen und im Lauf
+  gemeldet. Ohne MARA-Tabelle entfällt die Prüfung mit Warnung.
+- **Q27 Alternativen (STLAL).** Pro Material wird die niedrigste `STLAL` aus MAST verwendet; D15 zählt nur
+  verschiedene STLNR. Mehrere Alternativen derselben Stückliste sind nicht weiter behandelt.
+- **Q28 Zyklen** (ein Material taucht im eigenen Pfad wieder auf) → `manuell_prüfen`, keine weitere Auflösung;
+  maximale Tiefe 20.

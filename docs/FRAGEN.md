@@ -176,3 +176,15 @@ synthetischen Fixtures (`tests/fixtures/`) gebaut und getestet. Offen, bis jeman
 - **Q40 (Forts.)** `DATUV` ist in CUOB, CUKB, CUKBT, MARA, MARC, CABN zu 0 % lesbar, in STKO/STAS zu 100 %.
   Bei CUOB/CUKB ohne Änderungsdienst ist ein leeres Gültig-ab in SAP normal; Prüfpunkt 9 zeigt jetzt Rohbeispiele,
   damit klar ist, ob die Werte leer sind oder ein unbekanntes Format haben.
+
+## Dritter Ladelauf (2026-09-24)
+
+- **F4 / Q6 bestätigt:** CUKB hat nur `KNSTA = 1` und `KNART` 5 (528) bzw. 7 (10). Alle 538 Beziehungen mit
+  CUOB-Zuordnung sind gültig.
+- **Q42 KNOBJ ohne CUOB.** 429 926 KNOBJ hängen an STPO-Positionen (alle Stücklisten Werk 4000/Verwendung 1), nur
+  24 160 davon haben CUOB-Zeilen – der CUOB-Export ist auf STO-MON beschränkt. Umgesetzt: S wird beim Laden auf die
+  von den Root-Materialien erreichbaren Stücklisten eingeschränkt (D22; entspricht S.csv), abschaltbar mit
+  `db init --from-dir … --alle-stuecklisten`. Bleiben danach KNOBJ ohne CUOB übrig, zeigt `f4_trichter` sie; die
+  Positionen werden `manuell_prüfen` („Datenfehler: knobj_ohne_cuob“, Q24).
+- **Q40 geklärt:** `DATUV` in CUOB/CUKB/CUKBT/MARA ist leer (kein Änderungsdienst) – D14 filtert dort nur über
+  `LKENZ`. MARC/CABN haben vereinzelte Werte; Prüfpunkt 9 zeigt jetzt Anzahlen statt gerundeter Prozente.

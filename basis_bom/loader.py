@@ -306,8 +306,13 @@ def lade_quellen(
     quellen: dict[str, Quelle],
     merkmalliste: Iterable[str] | None = None,
     root_materialien: Iterable[str] = (),
+    nur_erreichbar: bool = True,
 ) -> Ladeergebnis:
-    """Liest alle Quellen, filtert über die Schlüsselmengen und liefert DataFrames (ohne DB)."""
+    """Liest alle Quellen, filtert über die Schlüsselmengen und liefert DataFrames (ohne DB).
+
+    Mit Root-Materialien und `nur_erreichbar` wird S auf die Stücklisten eingeschränkt, die von den Roots aus
+    erreichbar sind (D22: die Roots bestimmen den Umfang) – so wie S.csv/CUOB-Export auf STO-MON begrenzt sind.
+    """
     erg = Ladeergebnis()
     werks, stlan = config.WERKS, config.STLAN
 
@@ -356,6 +361,21 @@ def lade_quellen(
     stpo = lies("STPO", chunksize=STPO_CHUNK, filt=lambda d: _filter(d, STLNR=S), vorfilter=("STLNR", S))
     if stpo is None:
         raise ValueError("STPO fehlt")
+    roots = {ohne_nullen(m) for m in root_materialien}
+    if roots and nur_erreichbar:
+        S_rel, mat_rel = erreichbar(s_mast, stpo, roots)
+        log.info("S: %s Stücklisten Werk %s/Verwendung %s, davon %s von %s Roots erreichbar", len(S), werks, stlan,
+                 len(S_rel), len(roots))  # fmt: skip
+        erg.schluessel["S_alle"] = S
+        S = S_rel
+        erg.schluessel["S"] = S
+        for tab in ("STPO", "STKO", "STAS"):
+            if tab in erg.tabellen:
+                erg.tabellen[tab] = erg.tabellen[tab][erg.tabellen[tab]["STLNR"].isin(S)]
+                erg.protokoll[tab].zeilen_geladen = len(erg.tabellen[tab])
+        mast = erg.tabellen["MAST"] = mast[mast["MATNR"].isin(mat_rel)]
+        erg.protokoll["MAST"].zeilen_geladen = len(mast)
+        stpo = erg.tabellen["STPO"]
     erg.schluessel["P_idnrk"] = set(stpo["IDNRK"]) - {""}
     K = set(stpo["KNOBJ"]) - {"", "0"}
     erg.schluessel["K"] = K
@@ -386,6 +406,23 @@ def lade_quellen(
         lies("CAWN", filt=lambda d: _filter(d, ATINN=A))
         lies("CAWNT", filt=lambda d: _filter(_filter(d, ATINN=A), SPRAS=["D", "DE"]))
     return erg
+
+
+def erreichbar(mast: pd.DataFrame, stpo: pd.DataFrame, roots: set[str]) -> tuple[set[str], set[str]]:
+    """Stücklisten und Materialien, die von den Roots über MAST → STPO.IDNRK erreichbar sind."""
+    stl_pro_mat = mast.groupby("MATNR")["STLNR"].apply(set).to_dict()
+    kinder = stpo.groupby("STLNR")["IDNRK"].apply(set).to_dict()
+    mats, stls, offen = set(), set(), list(roots)
+    while offen:
+        m = offen.pop()
+        if m in mats:
+            continue
+        mats.add(m)
+        for stlnr in stl_pro_mat.get(m, ()):
+            if stlnr not in stls:
+                stls.add(stlnr)
+                offen.extend(k for k in kinder.get(stlnr, ()) if k and k not in mats)
+    return stls, mats
 
 
 def fixture_quellen(verz: Path) -> dict[str, Quelle]:
@@ -601,14 +638,18 @@ def lade_fixtures(verz: Path = config.FIXTURES_DIR) -> Ladeergebnis:
     return erg
 
 
-def lade_verzeichnis(verz: Path, merkmalliste: Iterable[str] | None = None) -> Ladeergebnis:
+def lade_verzeichnis(
+    verz: Path, merkmalliste: Iterable[str] | None = None, nur_erreichbar: bool = True
+) -> Ladeergebnis:
     roots, info = None, {}
     root_pfad = next((p for p in verz.iterdir() if p.name.lower() == ROOT_XLSX.lower()), None)
     if root_pfad is not None:
         roots, info = lese_root_xlsx(root_pfad)
     else:
         log.warning("Planzeiten-XLSX %s fehlt – root_material bleibt unverändert", ROOT_XLSX)
-    erg = lade_quellen(verzeichnis_quellen(verz), merkmalliste, roots["matnr"] if roots is not None else ())
+    erg = lade_quellen(
+        verzeichnis_quellen(verz), merkmalliste, roots["matnr"] if roots is not None else (), nur_erreichbar
+    )
     erg.roots, erg.root_info = roots, info
     if roots is not None:
         legacy = set(legacy_material_list())

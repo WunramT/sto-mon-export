@@ -50,7 +50,8 @@ def berichte(erg: Ladeergebnis, kanonisch: set[str] | None = None) -> str:
     stpo = erg.protokoll.get("STPO")
     if stpo:
         z.append(f"4. **STPO roh vs. STLNR ∈ S:** {stpo.zeilen_roh} → {stpo.zeilen_geladen} Zeilen "
-                 f"(|S| = {len(erg.schluessel.get('S', ()))}).")  # fmt: skip
+                 f"(|S| = {len(erg.schluessel.get('S', ()))}, alle Stücklisten Werk/Verwendung: "
+                 f"{len(erg.schluessel.get('S_alle', erg.schluessel.get('S', ())))}).")  # fmt: skip
 
     ri = erg.root_info
     if ri:
@@ -84,12 +85,12 @@ def berichte(erg: Ladeergebnis, kanonisch: set[str] | None = None) -> str:
     )
 
     belegung = {
-        t: f"{df['DATUV'].notna().mean():.0%} (roh z. B. {erg.protokoll[t].datum_beispiele[:3]})"
+        t: f"{int(df['DATUV'].notna().sum())}/{len(df)} (roh z. B. {erg.protokoll[t].datum_beispiele[:3]})"
         for t, df in erg.tabellen.items()
         if "DATUV" in df.columns and len(df)
     }
     z.append(
-        f"9. **DATUV belegt (Anteil lesbarer Datumswerte):** {belegung or '–'} – 0 % heißt: D14 greift dort nicht."
+        f"9. **DATUV belegt (lesbare Datumswerte / Zeilen):** {belegung or '–'} – 0 heißt: D14 greift dort nicht."
     )
 
     if "CUKB" in erg.tabellen:

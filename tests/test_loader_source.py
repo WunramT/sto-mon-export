@@ -263,3 +263,16 @@ def test_stas_ohne_stlkn_roh_bleibt_lesbar(erg):
     tabs = dict(erg.tabellen, STAS=erg.tabellen["STAS"].drop(columns=["STLKN"]))
     s = SapSource(tabs, erg.export_daten)
     assert s.stas is None and "stas_fehlt" in s.marker and len(s.roh("STAS")) == 6
+
+
+def test_s_nur_von_roots_erreichbar():
+    erg = loader.lade_quellen(
+        loader.fixture_quellen(loader.config.FIXTURES_DIR), root_materialien=["90000001"]
+    )
+    assert erg.schluessel["S"] == {"1000", "1001", "1002", "1003", "1004"}
+    assert {"1005", "1008"} <= erg.schluessel["S_alle"]
+    assert set(erg.tabellen["STPO"]["STLNR"]) <= erg.schluessel["S"]
+    assert "90000002" not in set(erg.tabellen["MAST"]["MATNR"])
+    alle = loader.lade_quellen(loader.fixture_quellen(loader.config.FIXTURES_DIR), root_materialien=["90000001"],
+                               nur_erreichbar=False)  # fmt: skip
+    assert "1005" in alle.schluessel["S"]

@@ -25,6 +25,11 @@ def _main(verbose: bool = typer.Option(False, "--verbose", "-v")) -> None:
 def db_init(
     fixtures: bool = typer.Option(False, "--fixtures", help="tests/fixtures/*.csv nach sap_raw laden"),
     from_dir: Path | None = typer.Option(None, "--from-dir", help="maßgebliche Exporte (docs/EXPORTE.md)"),
+    alle_stuecklisten: bool = typer.Option(
+        False,
+        "--alle-stuecklisten",
+        help="S nicht auf die von den Roots erreichbaren Stücklisten beschränken",
+    ),
 ) -> None:
     """Schemas anlegen (idempotent) und optional SAP-Daten nach `sap_raw` laden."""
     from . import loader, pruefpunkte
@@ -39,7 +44,9 @@ def db_init(
         typer.echo(f"Fixtures geladen: {', '.join(f'{t}={len(d)}' for t, d in erg.tabellen.items())}")
     elif from_dir:
         try:
-            erg = loader.lade_verzeichnis(from_dir, db.kanonische_merkmale(eng))
+            erg = loader.lade_verzeichnis(
+                from_dir, db.kanonische_merkmale(eng), nur_erreichbar=not alle_stuecklisten
+            )
         except loader.HeaderFehler as exc:
             if exc.erg is not None:
                 typer.echo(f"Header-Bericht: {_header_bericht(exc.erg.protokoll.values())}", err=True)

@@ -55,6 +55,10 @@ def db_init(
         loader.schreibe(eng, erg, quelle_roots=loader.ROOT_XLSX)
         pruefpunkte.schreibe_fragen(pruefpunkte.berichte(erg, set(db.kanonische_merkmale(eng))))
         typer.echo(f"Exporte geladen aus {from_dir}; Prüfpunkte in {config.FRAGEN_MD}")
+    if from_dir:
+        from . import rules
+
+        typer.echo(f"Aliasse aus CABN (D6): {rules.aliasse_aus_cabn(eng)} neu/aktualisiert")
     db.init_views(eng)
     typer.echo("db init: ok")
 
@@ -81,6 +85,64 @@ def db_headers(from_dir: Path = typer.Option(..., "--from-dir", exists=True, fil
         if fehlend:
             typer.echo(f"    unbekannte Header: {unbekannt}")
     typer.echo(f"Header-Bericht: {_header_bericht(prot)}")
+
+
+regel_app = typer.Typer(
+    help="Regeln und Aliasse ansehen und pflegen (historisiert, D21)", no_args_is_help=True
+)
+app.add_typer(regel_app, name="regel")
+
+
+@regel_app.command("liste")
+def regel_liste(
+    merkmal: str | None = typer.Argument(None, help="nur dieses Merkmal (Teilstring, z. B. PP4000)"),
+    status: str | None = typer.Option(None, "--status", help="BASIS | NICHT_BASIS | OFFEN"),
+) -> None:
+    """Aktueller Regelstand."""
+    from . import rules
+
+    rs = rules.lade_regelstand(db.engine())
+    zeilen = sorted(rs.regeln.values(), key=lambda r: (r.merkmal, r.status != "BASIS", r.rang or 0, r.wert))
+    for r in zeilen:
+        if merkmal and merkmal.upper() not in r.merkmal:
+            continue
+        if status and r.status != status.upper():
+            continue
+        typer.echo(f"{r.merkmal:40} {r.wert:20} {r.status:12} {r.rang if r.rang is not None else ''}")
+
+
+@regel_app.command("setzen")
+def regel_setzen(
+    merkmal: str,
+    wert: str = typer.Argument(..., help="Wert; bei Systemregeln 'vorhanden'"),
+    status: str = typer.Argument(..., help="BASIS | NICHT_BASIS | OFFEN"),
+    rang: int | None = typer.Option(None, "--rang", help="Pflicht bei BASIS (1 = stärkster)"),
+    begruendung: str | None = typer.Option(None, "--grund"),
+    von: str = typer.Option("mensch", "--von", help="wer ändert"),
+) -> None:
+    """Regel setzen, z. B. `basis-bom regel setzen PP4000_DUEBEL 1 BASIS --rang 1`."""
+    from . import rules
+
+    status = status.upper()
+    if (status == "BASIS") != (rang is not None):
+        raise typer.BadParameter("--rang genau bei BASIS angeben")
+    rules.setze_regel(db.engine(), merkmal.upper(), wert.upper() if wert != "vorhanden" else wert, status, rang,
+                      begruendung, von)  # fmt: skip
+    typer.echo(f"{merkmal.upper()}={wert}: {status} {rang or ''} (wirkt ab dem nächsten Lauf)")
+
+
+@regel_app.command("alias")
+def regel_alias(
+    alias: str,
+    merkmal: str | None = typer.Argument(None, help="kanonischer Name (CABN.ATNAM); leer = nicht verwendbar"),
+    status: str = typer.Option("BASIS", "--status", help="BASIS | NICHT_BASIS | OFFEN"),
+    von: str = typer.Option("mensch", "--von"),
+) -> None:
+    """Alias setzen, z. B. `basis-bom regel alias SQ SITZQUALI`."""
+    from . import rules
+
+    rules.setze_alias(db.engine(), alias.upper(), merkmal.upper() if merkmal else None, status.upper(), von)
+    typer.echo(f"Alias {alias.upper()} → {merkmal.upper() if merkmal else '–'} ({status.upper()})")
 
 
 @app.command()

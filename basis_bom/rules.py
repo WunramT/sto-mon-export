@@ -195,3 +195,58 @@ def seed_regelstand() -> Regelstand:
     aliasse = [Alias(a, m, s) for a, m, s in werte("900_seed_alias.sql")]
     regeln = [Regel(m, w, s, r) for m, w, s, r, _ in werte("910_seed_regel.sql")]
     return Regelstand.aus_listen(regeln, aliasse)
+
+
+def aliasse_aus_cabn(eng: Engine) -> int:
+    """D6: kanonischer Name = CABN.ATNAM – jeder Merkmalname aus CABN gilt als Alias auf sich selbst (BASIS).
+
+    Bestehende Aliasse (auch OFFEN eingetragene) werden auf BASIS gehoben, wenn der Name in CABN steht.
+    """
+    with eng.begin() as con:
+        if con.execute(sa.text("SELECT to_regclass('sap_raw.cabn')")).scalar() is None:
+            return 0
+        namen = sorted(
+            {
+                n.strip().upper()
+                for n in con.execute(sa.text("SELECT DISTINCT atnam FROM sap_raw.cabn")).scalars()
+                if n and n.strip()
+            }
+        )
+        if not namen:
+            return 0
+        jetzt = con.execute(sa.text("SELECT clock_timestamp()")).scalar()
+        con.execute(
+            sa.text(
+                "UPDATE basis_bom.alias SET gueltig_bis = :t WHERE gueltig_bis IS NULL AND alias = ANY(:n) "
+                "AND (status <> 'BASIS' OR merkmal IS NULL)"
+            ),
+            {"t": jetzt, "n": namen},
+        )
+        res = con.execute(
+            sa.text(
+                "INSERT INTO basis_bom.alias (alias, merkmal, status, gueltig_von, geaendert_von) "
+                "SELECT n, n, 'BASIS', :t, 'cabn' FROM unnest(CAST(:n AS text[])) AS n "
+                "WHERE NOT EXISTS (SELECT 1 FROM basis_bom.alias a WHERE a.alias = n AND a.gueltig_bis IS NULL)"
+            ),
+            {"t": jetzt, "n": namen},
+        )
+        return res.rowcount
+
+
+def setze_alias(
+    eng: Engine, alias: str, merkmal: str | None, status: str, geaendert_von: str = "mensch"
+) -> None:
+    """Historisierte Alias-Änderung (D21)."""
+    with eng.begin() as con:
+        jetzt = con.execute(sa.text("SELECT clock_timestamp()")).scalar()
+        con.execute(
+            sa.text("UPDATE basis_bom.alias SET gueltig_bis = :t WHERE alias = :a AND gueltig_bis IS NULL"),
+            {"t": jetzt, "a": alias},
+        )
+        con.execute(
+            sa.text(
+                "INSERT INTO basis_bom.alias (alias, merkmal, status, gueltig_von, geaendert_von) "
+                "VALUES (:a, :m, :s, :t, :v)"
+            ),
+            {"a": alias, "m": merkmal, "s": status, "t": jetzt, "v": geaendert_von},
+        )

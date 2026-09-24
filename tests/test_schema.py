@@ -77,3 +77,35 @@ def test_offen_eintragen(pg_engine):
     with pg_engine.begin() as con:
         con.execute(sa.text("DELETE FROM basis_bom.regel WHERE wert = 'ZZTEST'"))
         con.execute(sa.text("DELETE FROM basis_bom.alias WHERE alias = 'ZZALIAS'"))
+
+
+def test_aliasse_aus_cabn(pg_engine):
+    import pandas as pd
+
+    from basis_bom import loader
+
+    db.init_schema(pg_engine)
+    rules.trage_alias_offen_ein(pg_engine, ["PP4000_DUEBEL"], "test")
+    loader.schreibe_tabelle(pg_engine, "CABN", pd.DataFrame({"ATINN": ["1", "2", "3"],
+                            "ATNAM": ["PP4000_DUEBEL", "SITZQUALI", ""]}), None)  # fmt: skip
+    assert rules.aliasse_aus_cabn(pg_engine) >= 1
+    rs = rules.lade_regelstand(pg_engine)
+    assert rs.aliasse["PP4000_DUEBEL"] == rules.Alias("PP4000_DUEBEL", "PP4000_DUEBEL", "BASIS")
+    assert rs.aliasse["SITZQUALI"].status == "BASIS"
+    assert rules.aliasse_aus_cabn(pg_engine) == 0  # idempotent
+    with pg_engine.begin() as con:
+        con.execute(sa.text("DROP TABLE sap_raw.cabn"))
+
+
+def test_cli_regel(fixture_db, monkeypatch):
+    from typer.testing import CliRunner
+
+    from basis_bom.cli import app
+
+    monkeypatch.setenv("DATABASE_URL", fixture_db.url.render_as_string(hide_password=False))
+    r = CliRunner()
+    assert r.invoke(app, ["regel", "setzen", "MOTOR", "m9", "BASIS", "--rang", "1"]).exit_code == 0
+    assert "M9" in r.invoke(app, ["regel", "liste", "MOTOR"]).output
+    assert r.invoke(app, ["regel", "setzen", "MOTOR", "M8", "BASIS"]).exit_code != 0  # Rang fehlt
+    assert r.invoke(app, ["regel", "alias", "MOT", "MOTOR"]).exit_code == 0
+    assert rules.lade_regelstand(fixture_db).aliasse["MOT"].merkmal == "MOTOR"

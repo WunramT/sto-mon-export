@@ -203,3 +203,15 @@ synthetischen Fixtures (`tests/fixtures/`) gebaut und getestet. Offen, bis jeman
   (`SITZQUALI`, `SITZHOEHE`, …) nicht. CABN wird jetzt vollständig geladen; die echten Namen mit
   `SELECT atnam, merkmalbezeichnung FROM sap_raw.cabn ORDER BY 1` ansehen und in `basis_bom.alias` die Zuordnung
   Kürzel → echter ATNAM pflegen (D6: kanonischer Name = CABN.ATNAM).
+
+## Erste echte Auflösung 11071089 (2026-09-24)
+
+263 Positionen: 72 unbedingt, 130 manuell, 61 unterhalb manuell – fast alle offenen Fälle sind technische Regeln:
+- 103 × `PP4000_DUEBEL=1`: `PP4000_DUEBEL` ist ein CABN-Merkmal. Umgesetzt (D6): jeder CABN-Merkmalname gilt beim
+  Laden automatisch als Alias auf sich selbst (BASIS). Danach ist es `kein_rang_fuer:PP4000_DUEBEL` – eine
+  Fachentscheidung: Ist Dübel `1` Basis? → `basis-bom regel setzen PP4000_DUEBEL 1 BASIS --rang 1`.
+- 18 × `PP4000_MATERIAL_BUCHE_26MM` / `_32MM` (je Stückliste beide vorhanden): Alternativen als getrennte
+  Systemregeln. **Q46** Welche ist Basis? Und: Soll `NICHT_BASIS` bei einer Systemregel ausschließen (Q20)?
+  Wörtlich nach D4 führt es zu `manuell_prüfen`, dann kann die Alternative nie ausgeschlossen werden.
+- 9 × `PP2000_KLIPS_CNC<>X` (die einzige Negation, F2). **Q47** Soll der Parser Negation als „Merkmal ≠ Wert“
+  auswerten (passt, wenn der gewählte Wert nicht X ist)?

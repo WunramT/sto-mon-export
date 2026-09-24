@@ -76,6 +76,15 @@ fakten.f3_alternativpositionen(src)
 fakten.f4_knart_verteilung(src)
 
 # %% [markdown]
+# Wo gehen Beziehungen verloren (CUOB → CUKB → KNSTA → D14)? Und welche KNSTA/KNART-Werte gibt es roh?
+
+# %%
+fakten.f4_trichter(src)
+
+# %%
+fakten.cukb_werte(src)
+
+# %% [markdown]
 # ### F5 – Materialien mit mehr als einem STLNR (D15)
 
 # %%

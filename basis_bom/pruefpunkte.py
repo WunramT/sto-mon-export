@@ -84,13 +84,22 @@ def berichte(erg: Ladeergebnis, kanonisch: set[str] | None = None) -> str:
     )
 
     belegung = {
-        t: f"{df['DATUV'].notna().mean():.0%}"
+        t: f"{df['DATUV'].notna().mean():.0%} (roh z. B. {erg.protokoll[t].datum_beispiele[:3]})"
         for t, df in erg.tabellen.items()
         if "DATUV" in df.columns and len(df)
     }
     z.append(
         f"9. **DATUV belegt (Anteil lesbarer Datumswerte):** {belegung or '–'} – 0 % heißt: D14 greift dort nicht."
     )
+
+    if "CUKB" in erg.tabellen:
+        d = erg.tabellen["CUKB"]
+        cols = [c for c in ("KNSTA", "KNART") if c in d.columns]
+        if cols:
+            vert = d.groupby(cols, dropna=False).size().to_dict()
+            z.append(
+                f"10. **CUKB KNSTA × KNART (roh):** {vert} – freigegeben gilt derzeit nur KNSTA = 1 (Q6)."
+            )
 
     unbekannt = {t: p.unbekannte_spalten for t, p in erg.protokoll.items() if p.unbekannte_spalten}
     if unbekannt:

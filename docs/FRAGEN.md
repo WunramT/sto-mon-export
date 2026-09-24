@@ -162,3 +162,17 @@ synthetischen Fixtures (`tests/fixtures/`) gebaut und getestet. Offen, bis jeman
 - **Q40** In mindestens einer Tabelle war `DATUV` durchgehend leer oder unlesbar (Ursache des Abbruchs in F4).
   Prüfpunkt 9 zeigt nach dem nächsten Laden den Anteil lesbarer Datumswerte je Tabelle; Excel-Seriennummern
   werden jetzt ebenfalls gelesen.
+
+## Zweiter Ladelauf (2026-09-24)
+
+- **Q41 S bleibt 254 248 statt 12 473 (S.csv).** MAST wird jetzt korrekt auf Werk 4000 / Verwendung 1 gefiltert,
+  die Zeilenzahl bleibt aber 306 514 – die MAST-Datei ist offenbar schon so gefiltert. S.csv ist demnach eine
+  *Teilmenge*: vermutlich die Stücklisten, die von den STO-MON-Roots aus erreichbar sind (M.csv = 18 584 =
+  Zeilen von MARA/MARC/MAKT). Für das Ergebnis egal (aufgelöst wird nur ab den Roots), aber STPO lädt 1,2 Mio.
+  statt weniger Zeilen, und W wird 538 statt 130. Wie ist S.csv in `export_worker.ipynb` definiert?
+- **F4 (KNART an STPO):** 15 × `5`, 1 × `7` – nur 16 Beziehungen an allen gültigen STPO-Positionen. Das wirkt
+  wenig; `fakten.f4_trichter` (Notebook 00) zeigt, auf welcher Stufe (CUOB, CUKB, KNSTA, D14) Beziehungen wegfallen,
+  `fakten.cukb_werte` die Rohverteilung KNSTA × KNART.
+- **Q40 (Forts.)** `DATUV` ist in CUOB, CUKB, CUKBT, MARA, MARC, CABN zu 0 % lesbar, in STKO/STAS zu 100 %.
+  Bei CUOB/CUKB ohne Änderungsdienst ist ein leeres Gültig-ab in SAP normal; Prüfpunkt 9 zeigt jetzt Rohbeispiele,
+  damit klar ist, ob die Werte leer sind oder ein unbekanntes Format haben.

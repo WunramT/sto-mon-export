@@ -60,6 +60,43 @@ def f4_knart_verteilung(src: SapSource) -> pd.DataFrame:
     return cukb["KNART"].replace("", "(leer)").value_counts().rename_axis("KNART").reset_index(name="anzahl")
 
 
+def f4_trichter(src: SapSource) -> pd.DataFrame:
+    """Wo gehen Beziehungen verloren? KNOBJ an STPO → CUOB → CUKB roh → KNSTA freigegeben → gültig (D14)."""
+    from .source import KNSTA_FREIGEGEBEN
+
+    knobj = set(src.stpo["KNOBJ"]) - {"", "0"}
+    cuob_roh = src.roh("CUOB")
+    knnum_roh = set(cuob_roh.loc[cuob_roh["KNOBJ"].isin(knobj), "KNNUM"])
+    cukb_roh = src.roh("CUKB")
+    in_cukb = cukb_roh[cukb_roh["KNNUM"].isin(knnum_roh)]
+    knsta = in_cukb["KNSTA"] if "KNSTA" in in_cukb.columns else pd.Series(dtype=str)
+    return pd.DataFrame(
+        [
+            ("KNOBJ an gültigen STPO-Positionen", len(knobj)),
+            ("davon mit CUOB-Zeile", len(set(cuob_roh["KNOBJ"]) & knobj)),
+            ("KNNUM laut CUOB (roh)", len(knnum_roh)),
+            (
+                "davon gültig nach CUOB-D14/KNTAB",
+                len({n for k in knobj for n in src.knnum_pro_knobj.get(k, [])}),
+            ),
+            ("davon mit CUKB-Zeile (roh)", in_cukb["KNNUM"].nunique()),
+            (
+                f"davon KNSTA ∈ {sorted(KNSTA_FREIGEGEBEN)}",
+                in_cukb.loc[knsta.isin(KNSTA_FREIGEGEBEN), "KNNUM"].nunique() if len(knsta) else None,
+            ),
+            ("davon gültige CUKB-Version (D14)", len(knnum_roh & set(src.cukb["KNNUM"]))),
+        ],
+        columns=["stufe", "anzahl"],
+    )
+
+
+def cukb_werte(src: SapSource) -> pd.DataFrame:
+    """Rohverteilung KNSTA × KNART in CUKB (klärt Q6)."""
+    d = src.roh("CUKB")
+    cols = [c for c in ("KNSTA", "KNART") if c in d.columns]
+    return d.groupby(cols, dropna=False).size().rename("anzahl").reset_index() if cols else pd.DataFrame()
+
+
 def f5_mehrere_stlnr(src: SapSource) -> pd.DataFrame:
     zeilen = [
         {"MATNR": m, "STLNR": ", ".join(s for s, _ in v), "anzahl": len({s for s, _ in v})}

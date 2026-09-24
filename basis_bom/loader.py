@@ -92,6 +92,7 @@ class Protokoll:
     header: dict[str, str | None] = field(
         default_factory=dict
     )  # Original-Header → technisch (None = unbekannt)
+    datum_beispiele: list[str] = field(default_factory=list)  # Rohwerte DATUV vor dem Parsen
 
 
 @dataclass
@@ -238,6 +239,8 @@ def normalisiere(df: pd.DataFrame, tabelle: str, prot: Protokoll) -> pd.DataFram
             prot.fuehrende_nullen = bool(df[col].str.match(r"^0\d").any())
         df[col] = ohne_nullen_serie(df[col])
     for col in DATUMSSPALTEN & set(df.columns):
+        if not prot.datum_beispiele:
+            prot.datum_beispiele = [v for v in df[col].drop_duplicates().head(5).tolist()]
         df[col] = datum_serie(df[col])
     for col in ZAHLSPALTEN & set(df.columns):
         df[col] = zahl_serie(df[col])

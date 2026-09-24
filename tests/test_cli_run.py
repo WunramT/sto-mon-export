@@ -22,3 +22,10 @@ def test_cli_run(fixture_db, tmp_path, monkeypatch):
     assert list(tmp_path.glob("lauf_*/90000001/review_90000001.xlsx"))
     res = CliRunner().invoke(app, ["check"])
     assert res.exit_code == 0 and "Prüfungen" in res.output
+
+
+def test_cli_sql(fixture_db, monkeypatch, tmp_path):
+    monkeypatch.setenv("DATABASE_URL", fixture_db.url.render_as_string(hide_password=False))
+    ziel = tmp_path / "x.csv"
+    res = CliRunner().invoke(app, ["sql", "SELECT 1 AS eins", "--csv", str(ziel)])
+    assert res.exit_code == 0 and "eins" in res.output and ziel.exists()

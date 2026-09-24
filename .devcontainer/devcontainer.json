@@ -4,8 +4,11 @@
   "service": "dev",
   "workspaceFolder": "/workspaces/ML_Server",
   "shutdownAction": "stopCompose",
-  "forwardPorts": [8888, 5432],
-  "postCreateCommand": "pip install -e \".[dev]\" && python -m ipykernel install --user --name basis-bom && basis-bom db init --fixtures",
+  "forwardPorts": [
+    8888,
+    "db:5432"
+  ],
+  "postCreateCommand": "sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client && pip install -e \".[dev]\" && python -m ipykernel install --user --name basis-bom && basis-bom db init --fixtures",
   "customizations": {
     "vscode": {
       "extensions": [

@@ -84,6 +84,27 @@ def db_headers(from_dir: Path = typer.Option(..., "--from-dir", exists=True, fil
 
 
 @app.command()
+def sql(
+    abfrage: str = typer.Argument(..., help='SQL, z. B. "SELECT * FROM basis_bom.offene_faelle_ursache"'),
+    csv_datei: Path | None = typer.Option(None, "--csv", help="Ergebnis zusätzlich als CSV speichern"),
+    max_zeilen: int = typer.Option(200, "--max", help="höchstens so viele Zeilen anzeigen"),
+) -> None:
+    """SQL gegen die Dev-Datenbank ausführen und als Tabelle ausgeben (ohne psql)."""
+    import pandas as pd
+    import sqlalchemy as sa
+
+    with db.engine().connect() as con:
+        df = pd.read_sql(sa.text(abfrage), con)
+    with pd.option_context("display.max_rows", max_zeilen, "display.max_columns", None, "display.width", 250,
+                           "display.max_colwidth", 80):  # fmt: skip
+        typer.echo(df.head(max_zeilen).to_string(index=False))
+    typer.echo(f"({len(df)} Zeilen)")
+    if csv_datei:
+        df.to_csv(csv_datei, index=False, sep=";")
+        typer.echo(f"CSV: {csv_datei}")
+
+
+@app.command()
 def run(
     matnr: list[str] | None = typer.Option(None, "--matnr", help="nur diese Root-Materialien (mehrfach)"),
     out: Path | None = typer.Option(None, "--out", help="Ausgabeordner (Default: out/)"),

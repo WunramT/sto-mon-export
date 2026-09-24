@@ -188,3 +188,18 @@ synthetischen Fixtures (`tests/fixtures/`) gebaut und getestet. Offen, bis jeman
   Positionen werden `manuell_prüfen` („Datenfehler: knobj_ohne_cuob“, Q24).
 - **Q40 geklärt:** `DATUV` in CUOB/CUKB/CUKBT/MARA ist leer (kein Änderungsdienst) – D14 filtert dort nur über
   `LKENZ`. MARC/CABN haben vereinzelte Werte; Prüfpunkt 9 zeigt jetzt Anzahlen statt gerundeter Prozente.
+
+## Erster Lauf `run --matnr 11071089` (2026-09-24)
+
+- **Q43 MARA/MAKT enthalten keine Root-Materialien.** 18 584 Zeilen = M.csv = P_idnrk.csv, also nur
+  Komponenten. Die Stammdatenprüfung D22 (`KZKFG = X`) ist für Roots damit nicht möglich; Roots ohne MARA-Zeile
+  werden jetzt mit Warnung aufgelöst statt übersprungen. Für die Prüfung (und Kurztext/Warengruppe der Kopfzeile
+  im Export) sollte M beim Export die Roots enthalten (EXPORT-PLAN: M = MARC 4000 ∪ IDNRK).
+- **Q44 STPO enthielt alle Stücklistentypen.** `STLNR` ist nur je `STLTY` eindeutig; STPO/STKO/STAS werden jetzt
+  auf `STLTY = M` gefiltert (MAST verweist auf Materialstücklisten). Vermutlich Ursache der 19 424 IDNRK ohne MARA.
+- **Rote Prüfungen „Zeilenzahl ±20 %“** bei MAST/STAS/STKO/STPO sind die gewollte Einschränkung auf die von den
+  Roots erreichbaren Stücklisten (Q42), kein Exportfehler.
+- **Q45 CABN-Merkmalnamen.** Nur `FUNKTION` steht so in CABN; die anderen 14 kanonischen Namen der Alias-Tabelle
+  (`SITZQUALI`, `SITZHOEHE`, …) nicht. CABN wird jetzt vollständig geladen; die echten Namen mit
+  `SELECT atnam, merkmalbezeichnung FROM sap_raw.cabn ORDER BY 1` ansehen und in `basis_bom.alias` die Zuordnung
+  Kürzel → echter ATNAM pflegen (D6: kanonischer Name = CABN.ATNAM).

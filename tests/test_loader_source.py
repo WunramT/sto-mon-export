@@ -165,7 +165,7 @@ def test_cabn_beschreibende_header(tmp_path):
     erg = _mit_cabn(tmp_path, "Int. Merkmalsnummer;int. Zähler;Merkmal;Merkmalbezeichnung\n"
                               "0000000123;1;SITZQUALI;Sitzqualität\n0000000124;1;ANDERES;x\n")  # fmt: skip
     cabn = erg.tabellen["CABN"]
-    assert cabn["ATINN"].tolist() == ["123"] and cabn["ATNAM"].tolist() == ["SITZQUALI"]
+    assert cabn["ATINN"].tolist() == ["123", "124"]  # vollständig geladen
     assert erg.schluessel["A"] == {"123"}
 
 
@@ -276,3 +276,16 @@ def test_s_nur_von_roots_erreichbar():
     alle = loader.lade_quellen(loader.fixture_quellen(loader.config.FIXTURES_DIR), root_materialien=["90000001"],
                                nur_erreichbar=False)  # fmt: skip
     assert "1005" in alle.schluessel["S"]
+
+
+def test_stpo_nur_materialstuecklisten(tmp_path):
+    quellen = loader.fixture_quellen(loader.config.FIXTURES_DIR)
+    p = tmp_path / "stpo_20260923.csv"
+    inhalt = quellen["STPO"].pfad.read_text(encoding="utf-8")
+    p.write_text(
+        inhalt + "K;00001000;00000099;00000001;0990;99999998;L;1;ST;0;;;20200101;;\n", encoding="utf-8"
+    )
+    quellen["STPO"] = loader.Quelle("STPO", p, STICHTAG)
+    erg = loader.lade_quellen(quellen)
+    assert "99999998" not in set(erg.tabellen["STPO"]["IDNRK"])  # gleiche STLNR, anderer Stücklistentyp
+    assert set(erg.tabellen["STPO"]["STLTY"]) == {"M"}

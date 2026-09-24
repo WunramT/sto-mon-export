@@ -356,9 +356,12 @@ def lade_quellen(
     S = set(s_mast["STLNR"])
     erg.schluessel["S"] = S
 
-    lies("STKO", filt=lambda d: _filter(d, STLNR=S))
-    lies("STAS", filt=lambda d: _filter(d, STLNR=S))
-    stpo = lies("STPO", chunksize=STPO_CHUNK, filt=lambda d: _filter(d, STLNR=S), vorfilter=("STLNR", S))
+    # STLNR ist nur je Stücklistentyp eindeutig; MAST verweist auf Materialstücklisten (STLTY = M).
+    lies("STKO", filt=lambda d: _filter(d, STLTY="M", STLNR=S))
+    lies("STAS", filt=lambda d: _filter(d, STLTY="M", STLNR=S))
+    stpo = lies(
+        "STPO", chunksize=STPO_CHUNK, filt=lambda d: _filter(d, STLTY="M", STLNR=S), vorfilter=("STLNR", S)
+    )
     if stpo is None:
         raise ValueError("STPO fehlt")
     roots = {ohne_nullen(m) for m in root_materialien}
@@ -397,11 +400,15 @@ def lade_quellen(
     lies("MAKT", filt=lambda d: _filter(_filter(d, MATNR=M), SPRAS=["D", "DE"]))
 
     merkmale = {m.upper() for m in (merkmalliste or MERKMALLISTE_DEFAULT)}
-    cabn = lies("CABN", filt=lambda d: _filter(d, ATNAM=merkmale) if "ATNAM" in d.columns else d.iloc[0:0])
-    if cabn is not None and "ATINN" not in cabn.columns:
-        log.warning("CABN: Spalte ATINN fehlt – CAWN/CAWNT nicht filterbar, Marker cawn_fehlt bleibt")
+    # CABN ist klein und wird vollständig geladen, damit die echten Merkmalnamen für die Alias-Pflege sichtbar sind;
+    # die Schlüsselmenge A (für CAWN) enthält nur die kanonischen Merkmale.
+    cabn = lies("CABN")
+    if cabn is not None and ("ATINN" not in cabn.columns or "ATNAM" not in cabn.columns):
+        log.warning("CABN: Spalte ATINN/ATNAM fehlt – CAWN/CAWNT nicht filterbar, Marker cawn_fehlt bleibt")
     elif cabn is not None:
-        A = set(cabn["ATINN"])
+        A = set(cabn.loc[cabn["ATNAM"].str.upper().isin(merkmale), "ATINN"])
+        log.info("CABN: %s von %s kanonischen Merkmalen gefunden", cabn["ATNAM"].str.upper().isin(merkmale).sum(),
+                 len(merkmale))  # fmt: skip
         erg.schluessel["A"] = A
         lies("CAWN", filt=lambda d: _filter(d, ATINN=A))
         lies("CAWNT", filt=lambda d: _filter(_filter(d, ATINN=A), SPRAS=["D", "DE"]))

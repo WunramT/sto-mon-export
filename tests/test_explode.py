@@ -138,3 +138,10 @@ def test_zyklus_und_d15_baugruppe(erg_laden):
     assert zyklus.iloc[0]["status"] == "manuell_prüfen"
     assert d["ebene"].max() == 5  # andere Baugruppen unter der wiederholten Stückliste 1000
     assert (d.loc[d["matnr"] == "10000020", "grund"].str.startswith("D15")).all()
+
+
+def test_root_ohne_mara_wird_aufgeloest_mit_warnung(erg_laden):
+    tabs = dict(erg_laden.tabellen, MARA=erg_laden.tabellen["MARA"].query("MATNR != '90000001'"))
+    erg = Aufloeser(SapSource(tabs, erg_laden.export_daten), seed_regelstand()).loese_alle([ROOT])
+    assert set(erg.df()["root_matnr"]) == {ROOT}
+    assert any("ohne MARA-Zeile" in w for w in erg.warnungen)

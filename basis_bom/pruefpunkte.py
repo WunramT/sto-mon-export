@@ -70,7 +70,9 @@ def berichte(erg: Ladeergebnis, kanonisch: set[str] | None = None) -> str:
 
     cabn = erg.protokoll.get("CABN")
     if cabn:
-        gefunden = set(erg.tabellen["CABN"]["ATNAM"]) if "ATNAM" in erg.tabellen["CABN"] else set()
+        gefunden = (
+            set(erg.tabellen["CABN"]["ATNAM"].str.upper()) if "ATNAM" in erg.tabellen["CABN"] else set()
+        )
         z.append(f"6. **CABN:** roh {cabn.zeilen_roh}, geladen {cabn.zeilen_geladen}; kanonische Merkmale ohne "
                  f"CABN-Zeile: {sorted(kanonisch - gefunden) or 'keine'}.")  # fmt: skip
     else:

@@ -104,6 +104,7 @@ class Aufloeser:
         self.regeln = regeln.mit_offen(self.neue_paare)
         self.regel_version = regeln.version.isoformat() if regeln.version else None
         self._ebenen: dict[tuple[str, str], _Ebene] = {}
+        self.ohne_stammdaten: set[str] = set()
 
     # -----------------------------------------------------------------------------------------------------
     def _beobachtet(self, regeln: Regelstand) -> tuple[set[tuple[str, str]], set[str]]:
@@ -130,8 +131,9 @@ class Aufloeser:
             return f"D15: mehrere STLNR {sorted({s for s, _ in stl})}"
         if self.opt.kzkfg_pruefen and self.src.mara is not None:
             kz = self.src.lookup("MARA", "KZKFG").get(matnr)
-            if kz is None:
-                return "keine MARA-Zeile"
+            if kz is None:  # Stammdaten fehlen im Export → Prüfung nicht möglich, kein Verstoß (D22)
+                self.ohne_stammdaten.add(matnr)
+                return None
             if kz.upper() != "X":
                 return f"MARA KZKFG = {kz!r} statt 'X'"
         return None
@@ -155,6 +157,10 @@ class Aufloeser:
                 erg.uebersprungen.append({"matnr": root, "grund": grund})
                 continue
             self._loese_auf(root, erg)
+        if self.ohne_stammdaten:
+            beispiele = ", ".join(sorted(self.ohne_stammdaten)[:10])
+            erg.warnungen.append(f"Stammdatenprüfung KZKFG nicht möglich für {len(self.ohne_stammdaten)} Root(s) ohne "
+                                 f"MARA-Zeile, trotzdem aufgelöst: {beispiele}")  # fmt: skip
         return erg
 
     # -----------------------------------------------------------------------------------------------------

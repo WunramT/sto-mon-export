@@ -83,6 +83,15 @@ def berichte(erg: Ladeergebnis, kanonisch: set[str] | None = None) -> str:
         f"8. **Excel-Grenze 1.048.576 Zeilen:** {'; '.join(grenze) if grenze else 'kein Blatt betroffen'}."
     )
 
+    belegung = {
+        t: f"{df['DATUV'].notna().mean():.0%}"
+        for t, df in erg.tabellen.items()
+        if "DATUV" in df.columns and len(df)
+    }
+    z.append(
+        f"9. **DATUV belegt (Anteil lesbarer Datumswerte):** {belegung or '–'} – 0 % heißt: D14 greift dort nicht."
+    )
+
     unbekannt = {t: p.unbekannte_spalten for t, p in erg.protokoll.items() if p.unbekannte_spalten}
     if unbekannt:
         z.append(f"\nUnbekannte Header (ins Mapping `basis_bom/headers.py` aufnehmen): {unbekannt}")

@@ -43,6 +43,12 @@ def _gesetzt(s: pd.Series) -> pd.Series:
     return s.notna() & (s.astype(str).str.strip() != "")
 
 
+def bis_stichtag(datuv: pd.Series, stichtag: dt.date) -> pd.Series:
+    """D14: ohne DATUV oder DATUV ≤ Stichtag. Robust gegen date-, datetime- und reine NaT-Spalten."""
+    ts = pd.to_datetime(datuv, errors="coerce")
+    return ts.isna() | (ts <= pd.Timestamp(stichtag))
+
+
 def neueste_version(
     df: pd.DataFrame, stichtag: dt.date, keys: list[str], zaehler: str | None, loesch: list[str]
 ) -> pd.DataFrame:
@@ -51,7 +57,7 @@ def neueste_version(
         return df
     d = df
     if "DATUV" in d.columns:
-        d = d[d["DATUV"].isna() | (pd.to_datetime(d["DATUV"]).dt.date <= stichtag)]
+        d = d[bis_stichtag(d["DATUV"], stichtag)]
     keys = [k for k in keys if k in d.columns]
     if keys:
         sortcols, tmp = [], d.copy()
@@ -87,9 +93,9 @@ class SapSource:
             if tab in self._roh and "STLAL" not in self._roh[tab].columns:
                 self._roh[tab] = self._roh[tab].assign(STLAL="1")
                 self._ersatz_marker.add(f"stlal_fehlt:{tab}")
-        if "STAS" in self._roh and "STLKN" not in self._roh["STAS"].columns:
+        self._stas_nutzbar = "STAS" in self._roh and "STLKN" in self._roh["STAS"].columns
+        if "STAS" in self._roh and not self._stas_nutzbar:
             log.warning("STAS ohne STLKN – STAS wird nicht verwendet (Marker stas_fehlt)")
-            del self._roh["STAS"]
         self.export_daten = dict(export_daten)
         self.warnungen: list[str] = []
         self.marker: set[str] = set()
@@ -124,7 +130,7 @@ class SapSource:
                     daten[tab] = pd.to_datetime(ed.dropna().iloc[0]).date()
                 for col in df.columns:
                     if col == "DATUV":
-                        df[col] = pd.to_datetime(df[col]).dt.date
+                        df[col] = pd.to_datetime(df[col], errors="coerce")
                     elif col in {"MENGE", "BMENG"}:
                         df[col] = pd.to_numeric(df[col])
                     else:
@@ -150,7 +156,7 @@ class SapSource:
                 raise ValueError(f"{tab} fehlt in sap_raw – ohne diese Tabelle keine Auflösung")
         if "STKO" not in self._roh:
             self.marker.add("bmeng_angenommen")
-        if "STAS" not in self._roh:
+        if not self._stas_nutzbar:
             self.marker.add("stas_fehlt")
         if "CABN" not in self._roh or "CAWN" not in self._roh:
             self.marker.add("cawn_fehlt")
@@ -179,7 +185,7 @@ class SapSource:
         if "LKENZ" in d.columns:
             d = d[~_gesetzt(d["LKENZ"])]
         if "DATUV" in d.columns:
-            d = d[d["DATUV"].isna() | (pd.to_datetime(d["DATUV"]).dt.date <= self.stichtag)]
+            d = d[bis_stichtag(d["DATUV"], self.stichtag)]
         return d
 
     @cached_property
@@ -199,7 +205,7 @@ class SapSource:
 
     @cached_property
     def stas(self) -> pd.DataFrame | None:
-        return self._versioniert("STAS") if "STAS" in self._roh else None
+        return self._versioniert("STAS") if self._stas_nutzbar else None
 
     @cached_property
     def stko(self) -> pd.DataFrame | None:
@@ -258,7 +264,7 @@ class SapSource:
 
     @cached_property
     def _stas_stlnr(self) -> set[str]:
-        return set(self._roh["STAS"]["STLNR"]) if "STAS" in self._roh else set()
+        return set(self._roh["STAS"]["STLNR"]) if self._stas_nutzbar else set()
 
     def positionen_fuer(self, stlnr: str, stlal: str) -> pd.DataFrame:
         """Positionen einer Stückliste; hat STAS Einträge für die Stückliste, nur die gültigen Knoten der

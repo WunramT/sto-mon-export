@@ -243,3 +243,23 @@ def test_mast_header_echter_export():
     assert headers.technischer_name("MAST", "StücklVerwendung") == "STLAN"
     assert headers.technischer_name("MAST", "StücklAlternative") == "STLAL"
     assert headers.technischer_name("STKO", "StücklAlternative") == "STLAL"
+
+
+def test_bis_stichtag_robust():
+    from basis_bom.source import bis_stichtag
+
+    leer = pd.Series([None, None], dtype=object)
+    assert bis_stichtag(pd.to_datetime(leer), STICHTAG).tolist() == [True, True]  # reine NaT-Spalte
+    gemischt = pd.Series([dt.date(2020, 1, 1), None, dt.date(2027, 1, 1)])
+    assert bis_stichtag(gemischt, STICHTAG).tolist() == [True, True, False]
+
+
+def test_excel_seriennummer():
+    assert loader.datum_serie(pd.Series(["46154", "46154.0", "12345"])).tolist() == [
+        dt.date(2026, 5, 12), dt.date(2026, 5, 12), None]  # fmt: skip
+
+
+def test_stas_ohne_stlkn_roh_bleibt_lesbar(erg):
+    tabs = dict(erg.tabellen, STAS=erg.tabellen["STAS"].drop(columns=["STLKN"]))
+    s = SapSource(tabs, erg.export_daten)
+    assert s.stas is None and "stas_fehlt" in s.marker and len(s.roh("STAS")) == 6

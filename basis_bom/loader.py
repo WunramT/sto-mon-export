@@ -256,6 +256,11 @@ def ohne_nullen_serie(s: pd.Series) -> pd.Series:
 def datum_serie(s: pd.Series) -> pd.Series:
     s = s.astype(str).str.strip()
     ergebnis = pd.Series(pd.NaT, index=s.index, dtype="datetime64[ns]")
+    serial = s.str.fullmatch(r"\d{5}(\.0+)?").fillna(False).astype(bool)  # Excel-Seriennummer (1982–2064)
+    if serial.any():
+        zahl = pd.to_numeric(s[serial], errors="coerce")
+        ok = zahl.between(30000, 60000)
+        ergebnis[zahl[ok].index] = pd.Timestamp("1899-12-30") + pd.to_timedelta(zahl[ok], unit="D")
     for muster, laenge, fmt in ((r"\d{8}", 8, "%Y%m%d"), (r"\d{4}-\d{2}-\d{2}", 10, "%Y-%m-%d"),
                                 (r"\d{2}\.\d{2}\.\d{4}", 10, "%d.%m.%Y")):  # fmt: skip
         maske = ergebnis.isna() & s.str.match(muster).fillna(False).astype(bool)

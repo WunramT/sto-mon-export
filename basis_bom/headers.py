@@ -96,7 +96,6 @@ ALLGEMEIN: dict[str, str] = {
     "INTERNE NUMMER DES WISSENSBAUSTEINS": "KNNUM",
     "BEZIEHUNG": "KNNAM",
     "TABELLE": "KNTAB",  # vermutet
-    "SORTIERUNG": "KNSRT",  # vermutet
     "ART DES BEZIEHUNGSWISSENS": "KNART",  # vermutet (docs/EXPORTE.md Prüfpunkt 1)
     "BEZIEHUNGSART": "KNART",  # vermutet
     "STATUS DES BEZIEHUNGSWISSENS": "KNSTA",  # vermutet
@@ -146,14 +145,30 @@ ALLGEMEIN: dict[str, str] = {
 # Mehrdeutige Bezeichner (z. B. „Interner Zähler“ ist je Tabelle ein anderes Feld).
 PRO_TABELLE: dict[str, dict[str, str]] = {
     "STPO": {"INTERNER ZAEHLER": "STPOZ", "ZAEHLER": "STPOZ"},  # vermutet
-    "STAS": {"INTERNER ZAEHLER": "STASZ", "ZAEHLER": "STASZ"},  # vermutet
+    "STAS": {"KNOTEN POSITION": "STLKN", "INTERNER ZAEHLER": "STASZ", "ZAEHLER": "STASZ"},  # vermutet
     "STKO": {
         "INTERNER ZAEHLER": "STKOZ",
         "ZAEHLER": "STKOZ",
         "LOESCHKENNZEICHEN STUECKLISTE": "LOEKZ",
     },  # vermutet
-    "CUKB": {"INTERNER ZAEHLER": "ADZHL", "ZAEHLER": "ADZHL", "STATUS": "KNSTA"},  # vermutet
-    "CUKBT": {"INTERNER ZAEHLER": "ADZHL", "ZAEHLER": "ADZHL", "BEZEICHNUNG": "KNKTX"},  # vermutet
+    "CUOB": {
+        "TABELLEN ID": "KNTAB",
+        "ZAEHLER F SORTIERUNG": "KNSRT",
+        "SORTIERUNG": "KNSRT",
+        "INT ZAEHLER": "ADZHL",
+    },  # belegt: EXPORT_20260512_153230_cuob
+    "CUKB": {
+        "INT ZAEHLER": "ADZHL",
+        "INTERNER ZAEHLER": "ADZHL",
+        "ZAEHLER": "ADZHL",
+        "STATUS": "KNSTA",
+    },  # vermutet
+    "CUKBT": {
+        "INT ZAEHLER": "ADZHL",
+        "INTERNER ZAEHLER": "ADZHL",
+        "ZAEHLER": "ADZHL",
+        "BEZEICHNUNG": "KNKTX",
+    },  # vermutet
     "CABN": {
         "INT MERKMALSNUMMER": "ATINN",
         "INT MERKMALNUMMER": "ATINN",

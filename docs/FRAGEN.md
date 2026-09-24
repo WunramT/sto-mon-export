@@ -147,3 +147,18 @@ synthetischen Fixtures (`tests/fixtures/`) gebaut und getestet. Offen, bis jeman
   (Marker `stlal_fehlt:<Tabelle>`), STAS ohne `STLKN` wird nicht verwendet (`stas_fehlt`).
 - **Q38 CUKB ohne `ADZHL`**; CUOB ohne `KNTAB`/`KNSRT` (Filter `KNTAB = STPO` entfällt).
 - **Q39 CABN:** nur 1 von 2310 Zeilen hat einen kanonischen Merkmalnamen – Prüfpunkt 6 zeigt, welche fehlen.
+
+## Offene Fakten – erste Zahlen (Notebook 00, 2026-09-24)
+
+- **F1** keine KNNUM mit mehreren CUKB-Zeilen (538 Zeilen = 538 KNNUM) → Versionsauswahl D14 für CUKB wirkt
+  derzeit nicht, Versionszähler („int. Zähler“) jetzt als `ADZHL` zugeordnet.
+- **F2** eine Negation: `PP2000_KLIPS_CNC<>X` → bleibt `manuell_prüfen` (Q15).
+- **F3** nicht beantwortbar: die STPO-CSV enthält `ALPGR`/`ALPRF` nicht (Q36).
+- **F4** nach dem Fix erneut ausführen (Datumsvergleich brach ab).
+- **F5** keine Materialien mit mehr als einem STLNR (keine D15-Verstöße).
+- **F6** keine Stückliste mit `BMENG ≠ 1` (12 406 Stücklisten) → D17 teilt faktisch nie.
+- Zuordnungen nachgezogen: STAS „Knoten Position“ → `STLKN` (STAS wird damit verwendet), CUOB „Tabellen-Id“ →
+  `KNTAB`, „Zähler f. Sortierung“ → `KNSRT`, „int. Zähler“ → `ADZHL` (CUOB/CUKB/CUKBT).
+- **Q40** In mindestens einer Tabelle war `DATUV` durchgehend leer oder unlesbar (Ursache des Abbruchs in F4).
+  Prüfpunkt 9 zeigt nach dem nächsten Laden den Anteil lesbarer Datumswerte je Tabelle; Excel-Seriennummern
+  werden jetzt ebenfalls gelesen.

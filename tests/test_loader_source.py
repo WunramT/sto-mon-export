@@ -151,3 +151,24 @@ def test_db_roundtrip(pg_engine, erg, src):
     assert set(s.positionen_fuer("1001", "1")["STLKN"]) == {"1", "2", "3", "4"}
     assert s.bmeng("1001", "1") == (2.0, False)
     assert len(s.stpo) == len(src.stpo)
+
+
+def _mit_cabn(tmp_path, inhalt: str):
+    p = tmp_path / "EXPORT_cabn_20260923_142303.csv"
+    p.write_text(inhalt, encoding="utf-8")
+    quellen = loader.fixture_quellen(loader.config.FIXTURES_DIR)
+    quellen["CABN"] = loader.Quelle("CABN", p, STICHTAG)
+    return loader.lade_quellen(quellen)
+
+
+def test_cabn_beschreibende_header(tmp_path):
+    erg = _mit_cabn(tmp_path, "Int. Merkmalsnummer;int. Zähler;Merkmal;Merkmalbezeichnung\n"
+                              "0000000123;1;SITZQUALI;Sitzqualität\n0000000124;1;ANDERES;x\n")  # fmt: skip
+    cabn = erg.tabellen["CABN"]
+    assert cabn["ATINN"].tolist() == ["123"] and cabn["ATNAM"].tolist() == ["SITZQUALI"]
+    assert erg.schluessel["A"] == {"123"}
+
+
+def test_cabn_ohne_atinn_bricht_nicht_ab(tmp_path):
+    erg = _mit_cabn(tmp_path, "Merkmal;Irgendwas\nSITZQUALI;1\n")
+    assert "A" not in erg.schluessel and len(erg.tabellen["CABN"]) == 1

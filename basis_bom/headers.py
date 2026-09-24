@@ -139,8 +139,25 @@ PRO_TABELLE: dict[str, dict[str, str]] = {
     },  # vermutet
     "CUKB": {"INTERNER ZAEHLER": "ADZHL", "ZAEHLER": "ADZHL", "STATUS": "KNSTA"},  # vermutet
     "CUKBT": {"INTERNER ZAEHLER": "ADZHL", "ZAEHLER": "ADZHL", "BEZEICHNUNG": "KNKTX"},  # vermutet
-    "CAWN": {"INTERNER ZAEHLER": "ATZHL", "ZAEHLER": "ATZHL"},  # vermutet
-    "CAWNT": {"INTERNER ZAEHLER": "ATZHL", "ZAEHLER": "ATZHL"},  # vermutet
+    "CABN": {
+        "INT MERKMALSNUMMER": "ATINN",
+        "INT MERKMALNUMMER": "ATINN",
+        "INTERNE MERKMALSNUMMER": "ATINN",
+        "INT ZAEHLER": "ADZHL",
+        "INTERNER ZAEHLER": "ADZHL",
+    },  # belegt durch EXPORT_cabn_20260923 (ATINN)
+    "CAWN": {
+        "INTERNER ZAEHLER": "ATZHL",
+        "ZAEHLER": "ATZHL",
+        "INT MERKMALSNUMMER": "ATINN",
+        "INT MERKMALNUMMER": "ATINN",
+    },  # vermutet
+    "CAWNT": {
+        "INTERNER ZAEHLER": "ATZHL",
+        "ZAEHLER": "ATZHL",
+        "INT MERKMALSNUMMER": "ATINN",
+        "INT MERKMALNUMMER": "ATINN",
+    },  # vermutet
 }
 
 _UMLAUTE = str.maketrans({"Ä": "AE", "Ö": "OE", "Ü": "UE", "ß": "SS"})

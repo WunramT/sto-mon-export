@@ -201,7 +201,7 @@ def normalisiere(df: pd.DataFrame, tabelle: str, prot: Protokoll) -> pd.DataFram
             tech = headers.ersatzname(col)
             if tech not in prot.unbekannte_spalten:
                 prot.unbekannte_spalten.append(tech)
-                log.info("%s: unbekannte Spalte %r → %s (wird mitgeladen)", tabelle, col, tech)
+                log.debug("%s: unbekannte Spalte %r → %s (wird mitgeladen)", tabelle, col, tech)
         while tech in namen.values():
             tech += "_2"
         namen[col] = tech
@@ -209,6 +209,16 @@ def normalisiere(df: pd.DataFrame, tabelle: str, prot: Protokoll) -> pd.DataFram
     if not prot.spalten:
         prot.spalten = list(df.columns)
         prot.fehlende_spalten = [c for c in headers.SPALTEN.get(tabelle, []) if c not in df.columns]
+        zugeordnet = {
+            str(o): t for o, t in namen.items() if t in headers.SPALTEN.get(tabelle, []) and str(o) != t
+        }
+        if zugeordnet:
+            log.info("%s: Header zugeordnet %s", tabelle, zugeordnet)
+        if prot.unbekannte_spalten:
+            log.info("%s: %s unbekannte Spalten werden mitgeladen (Details mit -v)", tabelle,
+                     len(prot.unbekannte_spalten))  # fmt: skip
+        if prot.fehlende_spalten:
+            log.warning("%s: Spalten fehlen: %s", tabelle, prot.fehlende_spalten)
     for col in df.columns:
         df[col] = df[col].astype(str).str.strip()
     for col in NULLEN_WEG & set(df.columns):
@@ -257,6 +267,7 @@ def _filter(df: pd.DataFrame, **bedingungen: Iterable[str] | str) -> pd.DataFram
     maske = pd.Series(True, index=df.index)
     for col, werte in bedingungen.items():
         if col not in df.columns:
+            log.warning("Filterspalte %s fehlt – Filter entfällt (Header-Mapping prüfen)", col)
             continue
         if isinstance(werte, str):
             maske &= df[col] == werte
@@ -335,8 +346,10 @@ def lade_quellen(
     lies("MAKT", filt=lambda d: _filter(_filter(d, MATNR=M), SPRAS=["D", "DE"]))
 
     merkmale = {m.upper() for m in (merkmalliste or MERKMALLISTE_DEFAULT)}
-    cabn = lies("CABN", filt=lambda d: _filter(d, ATNAM=merkmale))
-    if cabn is not None:
+    cabn = lies("CABN", filt=lambda d: _filter(d, ATNAM=merkmale) if "ATNAM" in d.columns else d.iloc[0:0])
+    if cabn is not None and "ATINN" not in cabn.columns:
+        log.warning("CABN: Spalte ATINN fehlt – CAWN/CAWNT nicht filterbar, Marker cawn_fehlt bleibt")
+    elif cabn is not None:
         A = set(cabn["ATINN"])
         erg.schluessel["A"] = A
         lies("CAWN", filt=lambda d: _filter(d, ATINN=A))

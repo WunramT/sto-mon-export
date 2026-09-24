@@ -8,7 +8,10 @@ protokolliert der Loader und lädt sie unter normalisiertem Namen mit.
 
 from __future__ import annotations
 
+import csv
 import re
+from functools import lru_cache
+from pathlib import Path
 
 # Pro Tabelle die technischen Spalten, die EXPORT-PLAN Phase 2/3 nennt.
 SPALTEN: dict[str, list[str]] = {
@@ -62,14 +65,24 @@ ALLGEMEIN: dict[str, str] = {
     "WERK": "WERKS",
     "STUECKLISTENVERWENDUNG": "STLAN",  # vermutet
     "VERWENDUNG": "STLAN",  # vermutet
+    "STUECKLISTENVERW": "STLAN",  # vermutet
+    "STUELIVERWENDUNG": "STLAN",  # vermutet
+    "STLVERWENDUNG": "STLAN",  # vermutet
+    "VERW": "STLAN",  # vermutet
     "STUECKLISTE": "STLNR",  # vermutet
     "ALTERNATIVE STUECKLISTE": "STLAL",  # vermutet
     "ALTERNATIVSTUECKLISTE": "STLAL",  # vermutet
     "ALTERNATIVE": "STLAL",  # vermutet
+    "ALT STUECKLISTE": "STLAL",  # vermutet
+    "ALTSTUECKLISTE": "STLAL",  # vermutet
+    "ALTERNATIV STUECKLISTE": "STLAL",  # vermutet
     "STUECKLISTENTYP": "STLTY",  # vermutet
     "KNOTEN": "STLKN",  # vermutet
     "KNOTENNUMMER": "STLKN",  # vermutet
     "POSITIONSKNOTENNUMMER": "STLKN",  # vermutet
+    "POSITIONSKNOTEN": "STLKN",  # vermutet
+    "KNOTEN STUECKLISTENPOSITION": "STLKN",  # vermutet
+    "POSITIONSKNOTEN NR": "STLKN",  # vermutet
     "GUELTIG AB": "DATUV",
     "AENDERUNGSNUMMER": "AENNR",
     "LOESCHKENNZEICHEN": "LKENZ",
@@ -169,16 +182,45 @@ def normalisiere_header(h: object) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
+OVERRIDE_DATEI = Path(__file__).resolve().parent.parent / "docs" / "header_mapping.csv"
+
+
+@lru_cache(maxsize=1)
+def _override() -> dict[tuple[str, str], str]:
+    """Lokale Zuordnungen aus docs/header_mapping.csv (`tabelle;header;technisch`, `*` = alle Tabellen).
+    Hat Vorrang vor den eingebauten Tabellen; so lassen sich echte Export-Header ohne Codeänderung zuordnen."""
+    if not OVERRIDE_DATEI.exists():
+        return {}
+    out = {}
+    with OVERRIDE_DATEI.open(encoding="utf-8-sig") as f:
+        for zeile in csv.reader(f, delimiter=";"):
+            if len(zeile) < 3 or zeile[0].strip().startswith("#") or zeile[0].strip().lower() == "tabelle":
+                continue
+            out[(zeile[0].strip().upper(), _kompakt(normalisiere_header(zeile[1])))] = (
+                zeile[2].strip().upper()
+            )
+    return out
+
+
+def _kompakt(n: str) -> str:
+    return n.replace(" ", "")
+
+
 def technischer_name(tabelle: str, header: object) -> str | None:
     """Technischer Feldname oder None, wenn der Header unbekannt ist."""
     n = normalisiere_header(header)
+    k = _kompakt(n)
+    tab = tabelle.upper()
+    ov = _override()
+    if (tab, k) in ov or ("*", k) in ov:
+        return ov.get((tab, k)) or ov[("*", k)]
     tech = {c for cols in SPALTEN.values() for c in cols}
     if n.replace(" ", "_") in tech:
         return n.replace(" ", "_")
-    spezifisch = PRO_TABELLE.get(tabelle.upper(), {})
-    if n in spezifisch:
-        return spezifisch[n]
-    return ALLGEMEIN.get(n)
+    spezifisch = {_kompakt(h): t for h, t in PRO_TABELLE.get(tab, {}).items()}
+    if k in spezifisch:
+        return spezifisch[k]
+    return {_kompakt(h): t for h, t in ALLGEMEIN.items()}.get(k)
 
 
 def ersatzname(header: object) -> str:

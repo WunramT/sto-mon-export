@@ -82,6 +82,14 @@ class SapSource:
         prod: bool | None = None,
     ) -> None:
         self._roh = {k.upper(): v for k, v in tabellen.items()}
+        self._ersatz_marker: set[str] = set()
+        for tab in ("MAST", "STKO", "STAS"):  # ohne STLAL: eine Alternative „1“ annehmen
+            if tab in self._roh and "STLAL" not in self._roh[tab].columns:
+                self._roh[tab] = self._roh[tab].assign(STLAL="1")
+                self._ersatz_marker.add(f"stlal_fehlt:{tab}")
+        if "STAS" in self._roh and "STLKN" not in self._roh["STAS"].columns:
+            log.warning("STAS ohne STLKN – STAS wird nicht verwendet (Marker stas_fehlt)")
+            del self._roh["STAS"]
         self.export_daten = dict(export_daten)
         self.warnungen: list[str] = []
         self.marker: set[str] = set()
@@ -136,6 +144,7 @@ class SapSource:
         return self._roh[tab]
 
     def _pruefe_ersatz(self) -> None:
+        self.marker |= self._ersatz_marker
         for tab in ("MAST", "STPO", "CUOB", "CUKB"):
             if tab not in self._roh:
                 raise ValueError(f"{tab} fehlt in sap_raw – ohne diese Tabelle keine Auflösung")

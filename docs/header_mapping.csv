@@ -1,0 +1,4 @@
+# Eigene Zuordnung Export-Header → technischer Feldname; hat Vorrang vor basis_bom/headers.py.
+# Format: tabelle;header;technisch   (tabelle = * gilt für alle Tabellen). Groß-/Kleinschreibung, Umlaute,
+# Satzzeichen und Leerzeichen im Header sind egal. Header-Namen stehen in out/header_bericht.md.
+tabelle;header;technisch

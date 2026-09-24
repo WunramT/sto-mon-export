@@ -60,6 +60,14 @@ EXCEL_MAX_ZEILEN = 1_048_576
 STPO_CHUNK = 200_000
 
 
+class HeaderFehler(ValueError):
+    """Pflichtspalte nicht zugeordnet; trägt das bisherige Ladeergebnis für den Header-Bericht."""
+
+    def __init__(self, text: str, erg: Ladeergebnis | None = None) -> None:
+        super().__init__(text)
+        self.erg = erg
+
+
 @dataclass
 class Quelle:
     tabelle: str
@@ -81,6 +89,9 @@ class Protokoll:
     blaetter: dict[str, int] = field(default_factory=dict)
     fuehrende_nullen: bool | None = None
     hinweise: list[str] = field(default_factory=list)
+    header: dict[str, str | None] = field(
+        default_factory=dict
+    )  # Original-Header → technisch (None = unbekannt)
 
 
 @dataclass
@@ -202,6 +213,7 @@ def normalisiere(df: pd.DataFrame, tabelle: str, prot: Protokoll) -> pd.DataFram
             if tech not in prot.unbekannte_spalten:
                 prot.unbekannte_spalten.append(tech)
                 log.debug("%s: unbekannte Spalte %r → %s (wird mitgeladen)", tabelle, col, tech)
+        prot.header.setdefault(str(col), headers.technischer_name(tabelle, col))
         while tech in namen.values():
             tech += "_2"
         namen[col] = tech
@@ -249,7 +261,9 @@ def datum_serie(s: pd.Series) -> pd.Series:
         maske = ergebnis.isna() & s.str.match(muster).fillna(False).astype(bool)
         if maske.any():
             ergebnis[maske] = pd.to_datetime(s[maske].str[:laenge], format=fmt, errors="coerce")
-    return ergebnis.dt.date.where(ergebnis.notna(), None).astype(object)
+    werte = ergebnis.dt.date.astype(object)
+    werte[ergebnis.isna()] = None
+    return werte
 
 
 def zahl_serie(s: pd.Series) -> pd.Series:
@@ -316,6 +330,15 @@ def lade_quellen(
     mast = lies("MAST", filt=lambda d: _filter(d, WERKS=werks, STLAN=stlan))
     if mast is None:
         raise ValueError("MAST fehlt – ohne MAST keine Schlüsselmenge S")
+    fehlend = [c for c in ("MATNR", "WERKS", "STLAN", "STLNR") if c not in mast.columns]
+    if fehlend:
+        unbekannt = [h for h, t in erg.protokoll["MAST"].header.items() if t is None]
+        raise HeaderFehler(
+            f"MAST: Pflichtspalten {fehlend} nicht zugeordnet – ohne sie ist S falsch (Verwendung 1). "
+            f"Unbekannte MAST-Header: {unbekannt}. Zuordnung in docs/header_mapping.csv eintragen "
+            f"(z. B. 'MAST;<Header>;STLAN') oder `basis-bom db headers --from-dir <pfad>` ansehen.",
+            erg,
+        )
     s_mast = mast[_leer(mast["LKENZ"])] if "LKENZ" in mast.columns else mast
     S = set(s_mast["STLNR"])
     erg.schluessel["S"] = S
@@ -451,6 +474,16 @@ def schluessel_abgleich(erg: Ladeergebnis, verz: Path) -> None:
 # Schreiben nach Postgres
 
 
+def _leer_wert(v) -> bool:
+    """None, NaN, NaT, pd.NA → SQL NULL."""
+    if v is None or isinstance(v, str):
+        return v is None
+    try:
+        return bool(pd.isna(v))
+    except (TypeError, ValueError):
+        return False
+
+
 def _sql_typ(col: str) -> str:
     if col in DATUMSSPALTEN or col == "EXPORT_DATUM":
         return "date"
@@ -474,9 +507,7 @@ def schreibe_tabelle(eng: Engine, tabelle: str, df: pd.DataFrame, export_datum: 
             buf = io.StringIO()
             w = csv.writer(buf, lineterminator="\n")
             for row in df.itertuples(index=False, name=None):
-                w.writerow(
-                    ["\\N" if (v is None or (isinstance(v, float) and pd.isna(v))) else v for v in row]
-                )
+                w.writerow(["\\N" if _leer_wert(v) else v for v in row])
             buf.seek(0)
             collist = ", ".join(f'"{c.lower()}"' for c in cols)
             with cur.copy(f"COPY {name} ({collist}) FROM STDIN WITH (FORMAT csv, NULL '\\N')") as cp:
@@ -583,3 +614,43 @@ def lade_verzeichnis(verz: Path, merkmalliste: Iterable[str] | None = None) -> L
                  len(neu - legacy), len(legacy - neu), len(neu - S_mat))  # fmt: skip
     schluessel_abgleich(erg, verz)
     return erg
+
+
+def header_bericht(protokolle: Iterable[Protokoll]) -> str:
+    """Markdown: pro Tabelle alle Original-Header mit Zuordnung – Grundlage für docs/header_mapping.csv."""
+    z = ["# Header-Bericht", "", "Unbekannte Header lassen sich in `docs/header_mapping.csv` zuordnen "
+         "(`tabelle;header;technisch`).", ""]  # fmt: skip
+    for p in protokolle:
+        z.append(f"## {p.tabelle} – {p.datei}")
+        z.append("")
+        fehlend = [c for c in headers.SPALTEN.get(p.tabelle, []) if c not in p.header.values()]
+        z.append(f"Nicht zugeordnet (erwartet laut EXPORT-PLAN): {', '.join(fehlend) or '–'}")
+        z.append("")
+        z.append("| Header | technisch |")
+        z.append("|---|---|")
+        for h, t in p.header.items():
+            z.append(f"| {h} | {t or '**unbekannt**'} |")
+        z.append("")
+    return "\n".join(z)
+
+
+def lese_header(verz: Path) -> list[Protokoll]:
+    """Nur die Kopfzeilen der maßgeblichen Dateien (schnell, für `basis-bom db headers`)."""
+    from openpyxl import load_workbook
+
+    out = []
+    for tab, q in verzeichnis_quellen(verz).items():
+        prot = Protokoll(tab, q.pfad.name, q.export_datum)
+        if q.pfad.suffix.lower() in {".xlsx", ".xlsm"}:
+            wb = load_workbook(q.pfad, read_only=True)
+            kopf = next(wb.worksheets[0].iter_rows(max_row=1, values_only=True), ())
+            wb.close()
+        else:
+            sep, enc = _trenner(q.pfad)
+            with q.pfad.open(encoding=enc) as f:
+                kopf = next(csv.reader(f, delimiter=sep), [])
+        for h in kopf:
+            if h is not None:
+                prot.header[str(h)] = headers.technischer_name(tab, h)
+        out.append(prot)
+    return out

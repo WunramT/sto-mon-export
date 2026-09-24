@@ -38,12 +38,42 @@ def db_init(
         loader.schreibe(eng, erg, quelle_roots="fixtures")
         typer.echo(f"Fixtures geladen: {', '.join(f'{t}={len(d)}' for t, d in erg.tabellen.items())}")
     elif from_dir:
-        erg = loader.lade_verzeichnis(from_dir, db.kanonische_merkmale(eng))
+        try:
+            erg = loader.lade_verzeichnis(from_dir, db.kanonische_merkmale(eng))
+        except loader.HeaderFehler as exc:
+            if exc.erg is not None:
+                typer.echo(f"Header-Bericht: {_header_bericht(exc.erg.protokoll.values())}", err=True)
+            raise typer.Exit(f"FEHLER: {exc}") from None
+        typer.echo(f"Header-Bericht: {_header_bericht(erg.protokoll.values())}")
         loader.schreibe(eng, erg, quelle_roots=loader.ROOT_XLSX)
         pruefpunkte.schreibe_fragen(pruefpunkte.berichte(erg, set(db.kanonische_merkmale(eng))))
         typer.echo(f"Exporte geladen aus {from_dir}; Prüfpunkte in {config.FRAGEN_MD}")
     db.init_views(eng)
     typer.echo("db init: ok")
+
+
+def _header_bericht(protokolle) -> Path:
+    from . import loader
+
+    ziel = config.out_dir() / "header_bericht.md"
+    ziel.parent.mkdir(parents=True, exist_ok=True)
+    ziel.write_text(loader.header_bericht(protokolle), encoding="utf-8")
+    return ziel
+
+
+@db_app.command("headers")
+def db_headers(from_dir: Path = typer.Option(..., "--from-dir", exists=True, file_okay=False)) -> None:
+    """Nur Kopfzeilen der maßgeblichen Exporte lesen und die Zuordnung zeigen (schnell)."""
+    from . import headers, loader
+
+    prot = loader.lese_header(from_dir)
+    for p in prot:
+        fehlend = [c for c in headers.SPALTEN.get(p.tabelle, []) if c not in p.header.values()]
+        unbekannt = [h for h, t in p.header.items() if t is None]
+        typer.echo(f"{p.tabelle} ({p.datei}): nicht zugeordnet {fehlend or '–'}")
+        if fehlend:
+            typer.echo(f"    unbekannte Header: {unbekannt}")
+    typer.echo(f"Header-Bericht: {_header_bericht(prot)}")
 
 
 @app.command()

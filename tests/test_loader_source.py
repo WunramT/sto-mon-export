@@ -172,3 +172,66 @@ def test_cabn_beschreibende_header(tmp_path):
 def test_cabn_ohne_atinn_bricht_nicht_ab(tmp_path):
     erg = _mit_cabn(tmp_path, "Merkmal;Irgendwas\nSITZQUALI;1\n")
     assert "A" not in erg.schluessel and len(erg.tabellen["CABN"]) == 1
+
+
+def test_nat_wird_null(pg_engine):
+    from basis_bom import db
+
+    db.init_schema(pg_engine)
+    df = pd.DataFrame(
+        {"KNOBJ": ["1", "2"], "DATUV": [pd.NaT, dt.date(2026, 1, 1)], "MENGE": [float("nan"), 1.0]}
+    )
+    loader.schreibe_tabelle(pg_engine, "TEST_NAT", df, STICHTAG)
+    with pg_engine.connect() as con:
+        import sqlalchemy as sa
+
+        assert con.execute(sa.text("SELECT count(*) FROM sap_raw.test_nat WHERE datuv IS NULL")).scalar() == 1
+
+
+def test_header_override(tmp_path, monkeypatch):
+    from basis_bom import headers
+
+    datei = tmp_path / "header_mapping.csv"
+    datei.write_text("tabelle;header;technisch\n# Kommentar\nMAST;Stüli-Verw.;STLAN\n*;Mein Feld;MATKL\n",
+                     encoding="utf-8")  # fmt: skip
+    monkeypatch.setattr(headers, "OVERRIDE_DATEI", datei)
+    headers._override.cache_clear()
+    try:
+        assert headers.technischer_name("MAST", "Stüli Verw") == "STLAN"
+        assert headers.technischer_name("STKO", "Stüli-Verw.") is None
+        assert headers.technischer_name("MARA", "mein feld") == "MATKL"
+        assert headers.technischer_name("STKO", "Basis menge") == "BMENG"  # leerzeichenunabhängig
+    finally:
+        headers._override.cache_clear()
+
+
+def test_mast_ohne_stlan_klarer_fehler(tmp_path):
+    p = tmp_path / "mast_20260923.csv"
+    p.write_text("Material;Werk;Stückliste;Geheimnis\n1;4000;10;1\n", encoding="utf-8")
+    quellen = loader.fixture_quellen(loader.config.FIXTURES_DIR)
+    quellen["MAST"] = loader.Quelle("MAST", p, STICHTAG)
+    with pytest.raises(loader.HeaderFehler, match="STLAN") as exc:
+        loader.lade_quellen(quellen)
+    assert "Geheimnis" in str(exc.value)
+    assert "| Geheimnis | **unbekannt** |" in loader.header_bericht(exc.value.erg.protokoll.values())
+
+
+def test_ohne_stlal_und_stas_ohne_stlkn(erg):
+    tabs = {k: v.copy() for k, v in erg.tabellen.items()}
+    for t in ("MAST", "STKO", "STAS"):
+        tabs[t] = tabs[t].drop(columns=["STLAL"])
+    tabs["STAS"] = tabs["STAS"].drop(columns=["STLKN"])
+    s = SapSource(tabs, erg.export_daten)
+    assert {"stlal_fehlt:MAST", "stlal_fehlt:STKO", "stas_fehlt"} <= s.marker
+    assert s.bmeng("1001", "1") == (2.0, False)
+    assert set(s.positionen_fuer("1001", "1")["STLKN"]) == {"1", "2", "3", "4", "5"}  # ohne STAS: alle
+
+
+def test_lese_header(tmp_path):
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    wb.active.append(["Material", "Werk", "Rätselspalte"])
+    wb.save(tmp_path / "EXPORT_mast_20260923_150612.XLSX")
+    (prot,) = loader.lese_header(tmp_path)
+    assert prot.header == {"Material": "MATNR", "Werk": "WERKS", "Rätselspalte": None}

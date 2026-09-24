@@ -134,3 +134,16 @@ synthetischen Fixtures (`tests/fixtures/`) gebaut und getestet. Offen, bis jeman
 - **Q34** `notebooks/90_debug_material.py` löst mit dem *aktuellen* Regelstand neu auf (ohne zu speichern), damit
   Regeländerungen sofort sichtbar sind. Soll es stattdessen einen gespeicherten Lauf zeigen?
 - Getestet für das Fixture-Root `90000001`; ein echtes Material steht aus (keine Exporte in dieser Umgebung).
+
+## Erster Ladeversuch mit echten Exporten (2026-09-24)
+
+- **Q35 MAST-Header.** `STLAN` und `STLAL` wurden nicht zugeordnet → der Filter Verwendung 1 entfiel, S wurde
+  254 248 statt ~12 473 (S.csv). Der Loader bricht jetzt mit Liste der unbekannten MAST-Header ab; Zuordnung in
+  `docs/header_mapping.csv` eintragen. `DATUV`/`AENNR`/`LKENZ` gibt es in SAP-MAST nicht – kein Fehler.
+- **Q36 STPO-CSV ohne `DATUV`, `LKENZ`, `AENNR`, `POSNR`, `MEINS`.** D14 ist für STPO damit nicht prüfbar (es gilt
+  nur die neueste `STPOZ` je Knoten), Positionen werden nach `STLKN` sortiert, `ME` im Export bleibt leer. Kann der
+  Export diese Spalten nachliefern (EXPORT-PLAN Phase 2)?
+- **Q37 STKO/STAS ohne zugeordnetes `STLAL`, STAS ohne `STLKN`.** Bis zur Zuordnung: Alternative „1“ angenommen
+  (Marker `stlal_fehlt:<Tabelle>`), STAS ohne `STLKN` wird nicht verwendet (`stas_fehlt`).
+- **Q38 CUKB ohne `ADZHL`**; CUOB ohne `KNTAB`/`KNSRT` (Filter `KNTAB = STPO` entfällt).
+- **Q39 CABN:** nur 1 von 2310 Zeilen hat einen kanonischen Merkmalnamen – Prüfpunkt 6 zeigt, welche fehlen.

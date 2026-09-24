@@ -65,6 +65,8 @@ ALLGEMEIN: dict[str, str] = {
     "WERK": "WERKS",
     "STUECKLISTENVERWENDUNG": "STLAN",  # vermutet
     "VERWENDUNG": "STLAN",  # vermutet
+    "STUECKLVERWENDUNG": "STLAN",  # belegt: EXPORT_mast_20260923 „StücklVerwendung“
+    "STUECKLALTERNATIVE": "STLAL",  # belegt: EXPORT_mast_20260923 „StücklAlternative“
     "STUECKLISTENVERW": "STLAN",  # vermutet
     "STUELIVERWENDUNG": "STLAN",  # vermutet
     "STLVERWENDUNG": "STLAN",  # vermutet

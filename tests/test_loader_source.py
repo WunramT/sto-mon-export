@@ -235,3 +235,11 @@ def test_lese_header(tmp_path):
     wb.save(tmp_path / "EXPORT_mast_20260923_150612.XLSX")
     (prot,) = loader.lese_header(tmp_path)
     assert prot.header == {"Material": "MATNR", "Werk": "WERKS", "Rätselspalte": None}
+
+
+def test_mast_header_echter_export():
+    from basis_bom import headers
+
+    assert headers.technischer_name("MAST", "StücklVerwendung") == "STLAN"
+    assert headers.technischer_name("MAST", "StücklAlternative") == "STLAL"
+    assert headers.technischer_name("STKO", "StücklAlternative") == "STLAL"

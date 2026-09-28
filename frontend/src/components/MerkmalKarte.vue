@@ -79,7 +79,7 @@ const hierText = computed(() => {
 </script>
 
 <style scoped>
-.karte { border: 1px solid var(--linie); border-radius: 10px; background: #fff; margin-bottom: 10px; overflow: hidden; transition: box-shadow .2s; }
+.karte { border: 1px solid var(--linie); border-radius: 10px; background: #fff; margin-bottom: 10px; overflow: hidden; transition: box-shadow .2s; container-type: inline-size; }
 .karte.hervor { box-shadow: 0 0 0 2px var(--auswahl-rand); }
 .kopf { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; padding: 10px 12px 8px; }
 .mname { font-weight: 650; font-size: 14px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -108,4 +108,12 @@ const hierText = computed(() => {
 .pfeile button { border: 1px solid var(--linie-2); background: #fff; border-radius: 5px; width: 20px; height: 22px; display: grid; place-items: center; cursor: pointer; padding: 0; }
 .pfeile button:disabled { opacity: .35; cursor: default; }
 .min-w-0 { min-width: 0; }
+/* schmale Karte (Detailspalte bei 1280 px): Status-Knöpfe in eigene Zeile, Kopf untereinander */
+@container (max-width: 400px) {
+  .kopf { flex-direction: column; gap: 4px; }
+  .wert-zeile { grid-template-columns: 24px minmax(0, 1fr) 44px; row-gap: 6px; }
+  .status-wahl { grid-column: 2 / 4; grid-row: 2; justify-self: start; }
+  .pfeile { grid-column: 3; grid-row: 1; }
+  .wname { flex-direction: row; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+}
 </style>

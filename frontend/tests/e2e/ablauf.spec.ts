@@ -37,25 +37,56 @@ test('Material öffnen, Position erklären, Regel als Entwurf setzen', async ({ 
   await expect(page.getByRole('region', { name: 'Regel-Entwurf' })).toHaveCount(0)
 })
 
-test('Zeilen bewerten, speichern und bestätigen', async ({ page }) => {
+test('Zeilen bewerten und speichern; offene Positionen sperren das Bestätigen', async ({ page }) => {
   await page.locator('.material', { hasText: '90000006' }).click()
   await expect(page.locator('h1.mat-titel')).toContainText('90000006')
   const speichern = page.locator('[data-test="speichern-knopf"]')
-  // erste Zeile als falsch markieren und speichern (funktioniert auch, wenn schon bewertet wurde)
-  const erste = page.locator('.zeile[data-id]').first()
+  const erste = page.locator('.zeile[data-id]', { hasText: '10000020' })
   await erste.locator('[data-test="bew-falsch"]').click()
   await page.getByRole('button', { name: 'Angezeigte als Richtig' }).click()
+  await expect(page.getByText(/„Manuell prüfen“ bleib(t|en) offen/)).toBeVisible()
   await expect(speichern).toContainText('Speichern (')
   await speichern.click()
   await expect(page.getByText(/Gespeichert: \d+ Zeilen? bewertet/)).toBeVisible()
-  await expect(page.locator('[data-test="bestaetigen-knopf"]')).toBeDisabled()
-  // korrigieren → alles richtig → bestätigen
   await erste.locator('[data-test="bew-richtig"]').click()
   await speichern.click()
   await expect(speichern).toContainText('Gespeichert')
-  await page.locator('[data-test="bestaetigen-knopf"]').click()
-  await page.getByRole('dialog').getByRole('button', { name: 'Bestätigen', exact: true }).click()
-  await expect(page.getByText(/Bestätigt von E2E/)).toBeVisible()
-  await page.getByRole('button', { name: 'aufheben' }).click()
-  await expect(page.getByText(/Bestätigt von E2E/)).toHaveCount(0)
+  // 10000102 ist „Manuell prüfen“ → Bestätigen gesperrt, mit Begründung
+  await expect(page.locator('[data-test="bestaetigen-knopf"]')).toBeDisabled()
+  await expect(page.getByText(/noch „Manuell prüfen“ – erst die offenen Regelfragen klären/)).toBeVisible()
+})
+
+test('Entwurf und Bewertungen bleiben beim Personenwechsel getrennt', async ({ page }) => {
+  await page.locator('.zeile[data-id]', { hasText: '10000102' }).click()
+  const karte = page.locator('.details [data-merkmal="SITZQUALI"]')
+  await karte.locator('.wert-zeile', { hasText: 'XX' }).getByRole('button', { name: 'Nie Basis', exact: true }).click()
+  await expect(page.getByRole('region', { name: 'Regel-Entwurf' })).toBeVisible()
+  await page.waitForTimeout(600)  // Entwurf ist beim Server angekommen
+  await page.locator('[data-test="nutzer-knopf"]').click()
+  await page.getByText('Abmelden').click()
+  await page.getByLabel('Ihr Name').fill(`Andere Person ${Date.now() % 100000}`)
+  await page.getByLabel('Team-Passwort').fill(PASSWORT)
+  await page.getByRole('button', { name: 'Anmelden' }).click()
+  await expect(page.locator('.zeile[data-id]').first()).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Regel-Entwurf' })).toHaveCount(0)
+})
+
+test('Kommentar erst nach einem Urteil; offene Positionen sind nicht „richtig“', async ({ page }) => {
+  await page.locator('.zeile[data-id]', { hasText: '10000002' }).click()
+  const kommentar = page.getByLabel('Kommentar')
+  await expect(kommentar).toBeDisabled()
+  await page.locator('.details [data-test="bew-richtig"]').click()
+  await expect(kommentar).toBeEnabled()
+  // offene Position: nur „Sollte rein/raus“
+  const offen = page.locator('.zeile[data-id]', { hasText: '10000102' })
+  await expect(offen.locator('[data-test="bew-richtig"]')).toHaveCount(0)
+  await expect(offen.locator('[data-test="bew-rein"]')).toBeVisible()
+})
+
+test('Zuklappen wirkt auch bei aktivem Filter', async ({ page }) => {
+  await page.getByRole('button', { name: 'Offene', exact: true }).click()
+  const zeilen = page.locator('.zeile[data-id]')
+  const vorher = await zeilen.count()
+  await page.getByRole('button', { name: 'Alle zuklappen' }).click()
+  await expect(zeilen).not.toHaveCount(vorher)
 })

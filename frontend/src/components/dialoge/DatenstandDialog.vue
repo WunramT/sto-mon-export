@@ -25,7 +25,7 @@
           <tr v-for="f in info.dateien" :key="f.name"><td class="mono">{{ f.name }}</td><td class="text-right mono">{{ fmtGroesse(f.groesse) }}</td><td>{{ fmtZeit(f.geaendert) }}</td></tr>
         </tbody>
       </v-table>
-      <p v-else class="text-body-2 text-2">Keine Dateien. Exporte auf dem Server in das Verzeichnis legen (Liste in <code>docs/EXPORTE.md</code>).</p>
+      <p v-else class="text-body-2 text-2">Keine Dateien. Die SAP-Exporte legt das Projektteam auf dem Server in dieses Verzeichnis.</p>
       <p class="text-caption text-2 mt-4 mb-0">„Neu laden“ ersetzt die SAP-Daten in der Datenbank. Regeln, Bewertungen und Bestätigungen bleiben erhalten. Während des Ladens (mit STPO einige Minuten) ist die Oberfläche für alle gesperrt.</p>
     </v-card-text>
     <v-card-actions class="px-6 pb-5">

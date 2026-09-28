@@ -173,8 +173,8 @@ def _grund_text(grund: str | None) -> str | None:
 
 
 class Konflikt(Exception):
-    def __init__(self, konflikte: list[dict]) -> None:
-        super().__init__("Regelstand wurde inzwischen geändert")
+    def __init__(self, konflikte: list[dict], text: str = "Regelstand wurde inzwischen geändert") -> None:
+        super().__init__(text)
         self.konflikte = konflikte
 
 
@@ -231,6 +231,11 @@ class Dienst:
     def neu_laden(self) -> None:
         with self._lock:
             self._src, self._cache, self._erreichbar = None, {}, None
+
+    def cache_leeren(self) -> None:
+        """Aufgelöste Stücklisten neu rechnen (z. B. nach geänderten Anzeigenamen); SAP-Daten bleiben geladen."""
+        with self._lock:
+            self._cache = {}
 
     def regelstand(self) -> Regelstand:
         return rules.lade_regelstand(self.eng)
@@ -733,11 +738,23 @@ class Dienst:
             "bestaetigt": {"von": best[0], "datum": str(best[1])} if best else None,
         }  # fmt: skip
 
-    def review_speichern(self, matnr: str, urteile: dict[str, dict], ergaenzt: list[dict], von: str) -> dict:
-        """Speichert den vollständigen Review-Stand als Momentaufnahme eines Laufs für dieses Material."""
+    def review_speichern(self, matnr: str, urteile: dict[str, dict], ergaenzt: list[dict], von: str,
+                         stand: str | None = None, pruefe_stand: bool = False) -> dict:  # fmt: skip
+        """Speichert den vollständigen Review-Stand als Momentaufnahme eines Laufs für dieses Material.
+
+        Mit `pruefe_stand`: `stand` ist der Review-Stand, auf dem die Eingaben beruhen (None = noch keiner). Hat
+        inzwischen jemand anderes gespeichert, gibt es einen Konflikt statt stillem Überschreiben.
+        """
         if not von.strip():
             raise Eingabefehler("Name fehlt")
         matnr = matnr.strip().lstrip("0")
+        if pruefe_stand:
+            rows = self._letzter_review(matnr)
+            jetzt = str(rows[0]["importiert"]) if rows else None
+            if jetzt != stand:
+                wer = rows[0]["reviewer"] if rows else "jemand"
+                raise Konflikt([{"art": "review", "matnr": matnr, "von": wer, "stand": jetzt}],
+                               f"{wer} hat dieses Material inzwischen bewertet")  # fmt: skip
         for pfad, u in urteile.items():
             if u.get("urteil") not in URTEILE:
                 raise Eingabefehler(f"Urteil {u.get('urteil')!r} unbekannt ({pfad})")
@@ -791,6 +808,12 @@ class Dienst:
         erg = self.aufloeser().loese_alle([matnr])
         aktuell = {z["pfad"]: z["status"] for z in erg.zeilen}
         urteile = {r["pfad"]: r for r in rows if r["status"] is not None}
+        offen = [p for p, st in aktuell.items() if st in (MANUELL_PRUEFEN, UNTERHALB_MANUELL)]
+        if offen:
+            raise Eingabefehler(
+                f"Bestätigen nicht möglich: {len(offen)} Position(en) sind noch „manuell prüfen“ – "
+                "erst die offenen Regelfragen klären"
+            )
         fehlend = [p for p in aktuell if p not in urteile]
         nicht_richtig = [r for r in rows if r["urteil"] != "richtig"]
         veraltet = [p for p, r in urteile.items() if aktuell.get(p) != r["status"]]

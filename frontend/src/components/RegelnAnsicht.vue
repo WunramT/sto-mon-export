@@ -71,7 +71,9 @@ onMounted(async () => {
 <style scoped>
 .regeln { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .werkzeuge { display: flex; align-items: center; gap: 12px; padding: 10px 18px; border-bottom: 1px solid var(--linie); flex-wrap: wrap; }
-.suche { max-width: 240px; }
+.suche { flex: 0 0 240px; min-width: 200px; }
+.werkzeuge :deep(.v-selection-control) { min-height: 32px; }
+.inhalt :deep(.v-alert) { font-size: 13px; }
 .inhalt { flex: 1; overflow-y: auto; padding: 14px 18px 30px; background: var(--flaeche-2); }
 .regel-liste { display: grid; grid-template-columns: repeat(auto-fill, minmax(430px, 1fr)); gap: 0 12px; align-items: start; }
 .kuerzel { display: flex; flex-wrap: wrap; gap: 6px; }

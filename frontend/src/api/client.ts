@@ -15,9 +15,11 @@ export class ApiFehler extends Error {
 
 let tokenQuelle: () => string | null = () => null
 let beiAbmeldung: () => void = () => {}
-export function verbindeAuth(token: () => string | null, abmelden: () => void) {
+let beiNichtBereit: () => void = () => {}
+export function verbindeAuth(token: () => string | null, abmelden: () => void, nichtBereit?: () => void) {
   tokenQuelle = token
   beiAbmeldung = abmelden
+  if (nichtBereit) beiNichtBereit = nichtBereit
 }
 
 const http = axios.create({ baseURL: apiBasis, timeout: 300000, headers: { 'Content-Type': 'application/json' } })
@@ -32,7 +34,13 @@ function alsFehler(e: unknown): ApiFehler {
   const err = e as AxiosError<any>
   if (err.response) {
     const d = err.response.data || {}
-    const text = typeof d.fehler === 'string' ? d.fehler : typeof d.detail === 'string' ? d.detail : `Fehler ${err.response.status}`
+    const standard: Record<number, string> = {
+      429: 'Zu viele Anfragen – bitte kurz warten und erneut versuchen.',
+      502: 'Das Backend ist gerade nicht erreichbar (Neustart?) – bitte gleich noch einmal versuchen.',
+      504: 'Das Backend antwortet nicht rechtzeitig – bitte erneut versuchen.',
+    }
+    const text = typeof d.fehler === 'string' ? d.fehler : typeof d.detail === 'string' ? d.detail
+      : standard[err.response.status] || `Unerwarteter Fehler (${err.response.status})`
     return new ApiFehler(text, err.response.status, d)
   }
   if (err.code === 'ECONNABORTED') return new ApiFehler('Der Server antwortet nicht (Zeitüberschreitung).')
@@ -46,6 +54,7 @@ export async function api<T = any>(methode: string, url: string, body?: unknown)
   } catch (e) {
     const f = alsFehler(e)
     if (f.status === 401 && !url.startsWith('/auth/')) beiAbmeldung()
+    if (f.status === 503 && !url.startsWith('/datenstand')) beiNichtBereit()
     throw f
   }
 }
@@ -64,7 +73,10 @@ export async function herunterladen(url: string, dateiname: string): Promise<voi
     const err = e as AxiosError<any>
     if (err.response?.data instanceof Blob) {
       const text = await err.response.data.text()
-      try { throw new ApiFehler(JSON.parse(text).fehler || text, err.response.status) } catch (x) { if (x instanceof ApiFehler) throw x }
+      let meldung = text || `Fehler ${err.response.status}`
+      try { meldung = JSON.parse(text).fehler || meldung } catch { /* kein JSON: Text wie er ist */ }
+      if (err.response.status === 401) beiAbmeldung()
+      throw new ApiFehler(meldung, err.response.status)
     }
     throw alsFehler(e)
   }

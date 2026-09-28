@@ -89,7 +89,6 @@ pipeline {
                         REMOTE = [name: params.TARGET_SERVER, host: hostConfig.host, port: hostConfig.port,
                                   allowAnyHosts: hostConfig.allowAnyHosts, user: REMOTE_USR, password: REMOTE_PSW]
                     }
-                    env.REMOTE_BEREIT = 'true'
                     // dpn-svr-iot läuft direkt unter der Domain (MLP); die Werks-Server unter /app/<kürzel>
                     env.BASE_PATH = params.TARGET_SERVER == 'dpn-svr-iot' ? '' : "/app/${params.TARGET_SERVER.take(4).replaceAll(/-$/, '')}"
                 }
@@ -133,9 +132,14 @@ pipeline {
                 script {
                     sshCommand remote: REMOTE, command: """
                         set -e
+                        # Die App verbindet sich mit DATABASE_USER aus sens.env (empfohlen: eigene Rolle, siehe docs/DEPLOYMENT.md)
+                        APP_USER=\$(grep -E '^DATABASE_USER=' ${DEPLOY_DIR}/base/sens.env | tail -1 | cut -d= -f2- | tr -d '"' )
+                        APP_USER=\${APP_USER:-postgres}
+                        docker exec ${POSTGRES_CONTAINER} psql -U ${POSTGRES_USER} -d postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='\$APP_USER'" | grep -q 1 \
+                            || { echo "FEHLER: Datenbank-Rolle \$APP_USER fehlt (einmalig anlegen, siehe docs/DEPLOYMENT.md)"; exit 1; }
                         if ! docker exec ${POSTGRES_CONTAINER} psql -U ${POSTGRES_USER} -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='${DATABASE_NAME}'" | grep -q 1; then
-                            echo "Lege Datenbank ${DATABASE_NAME} an (erster Deploy)"
-                            docker exec ${POSTGRES_CONTAINER} createdb -U ${POSTGRES_USER} ${DATABASE_NAME}
+                            echo "Lege Datenbank ${DATABASE_NAME} an (erster Deploy, Eigentümer \$APP_USER)"
+                            docker exec ${POSTGRES_CONTAINER} createdb -U ${POSTGRES_USER} -O \$APP_USER ${DATABASE_NAME}
                         elif docker exec ${POSTGRES_CONTAINER} psql -U ${POSTGRES_USER} -d ${DATABASE_NAME} -tAc "SELECT 1 FROM information_schema.schemata WHERE schema_name='basis_bom'" | grep -q 1; then
                             DATEI=${HOST_BACKUP_DIR}/${DATABASE_NAME}_basis_bom_\$(date +%Y%m%d_%H%M%S).dump
                             docker exec ${POSTGRES_CONTAINER} pg_dump -U ${POSTGRES_USER} -d ${DATABASE_NAME} -n basis_bom -Fc > \$DATEI
@@ -160,6 +164,8 @@ pipeline {
                         docker inspect ${BACKEND_CONTAINER}  >/dev/null 2>&1 && docker rename ${BACKEND_CONTAINER}  ${BACKEND_CONTAINER}-previous  || true
                         docker inspect ${FRONTEND_CONTAINER} >/dev/null 2>&1 && docker rename ${FRONTEND_CONTAINER} ${FRONTEND_CONTAINER}-previous || true
                     """
+                    // Erst ab hier ersetzt der Deploy laufende Container – nur dann zurückrollen
+                    env.GEPARKT = 'true'
                 }
             }
         }
@@ -191,8 +197,9 @@ pipeline {
                     // Backend meldet sich sofort gesund; Datenbankfehler zeigen sich im Datenstand
                     sshCommand remote: REMOTE, command: """
                         sleep 5
-                        docker exec ${BACKEND_CONTAINER} python -c "import json,urllib.request; print(json.load(urllib.request.urlopen('http://127.0.0.1:8000/api/health')))"
                         docker logs --tail 30 ${BACKEND_CONTAINER}
+                        # Liveness ist sofort grün; hier zusätzlich: Datenbank erreichbar, Start nicht fehlgeschlagen
+                        docker exec ${BACKEND_CONTAINER} python -c "import json,sys,urllib.request; h=json.load(urllib.request.urlopen('http://127.0.0.1:8000/api/health')); print(h); sys.exit(1 if h.get('daten') == 'fehler' else 0)"
                     """
                 }
             }
@@ -227,9 +234,13 @@ pipeline {
             when { expression { params.RELOAD_EXPORTS == 'yes' } }
             steps {
                 script {
-                    sshCommand remote: REMOTE, command: """
-                        docker exec ${BACKEND_CONTAINER} python scripts/neu_laden.py --warten
-                    """
+                    // Die neuen Container laufen schon gesund: ein Fehler beim Laden macht den Build UNSTABLE,
+                    // löst aber keinen Rollback aus (die Oberfläche zeigt den Fehler im Datenstand).
+                    catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                        sshCommand remote: REMOTE, command: """
+                            docker exec ${BACKEND_CONTAINER} python scripts/neu_laden.py --warten
+                        """
+                    }
                 }
             }
         }
@@ -250,8 +261,9 @@ pipeline {
     post {
         failure {
             script {
-                if (env.REMOTE_BEREIT != 'true') {
-                    echo 'Fehler vor dem Verbindungsaufbau – nichts zurückzurollen.'
+                if (env.GEPARKT != 'true') {
+                    // Fehler vor dem Austausch (Host, Images, Datenbank): die laufende Version bleibt unberührt
+                    echo 'Fehler vor dem Austausch der Container – laufende Version bleibt unverändert, kein Rollback.'
                     return
                 }
                 echo 'Deployment fehlgeschlagen – alte Container werden wieder gestartet.'

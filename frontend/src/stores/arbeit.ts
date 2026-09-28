@@ -1,7 +1,7 @@
 // Arbeitszustand: Materialliste, geöffnetes Material, Regel-Entwurf, Bewertungen, Regel- und Auswirkungsansicht.
 // Alle Berechnungen macht der Server (basis_bom); hier nur Zustand, Entwurf und ungespeicherte Bewertungen.
 import { defineStore } from 'pinia'
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { api, apiBasis, ApiFehler, herunterladen } from '@/api/client'
 import { useAuth } from '@/stores/auth'
 import { useUi } from '@/stores/ui'
@@ -10,7 +10,7 @@ import { IM_ERGEBNIS, OFFEN_STATUS, RAUS, REGEL_STATUS, mehrzahl } from '@/utils
 
 type Dict<T = any> = Record<string, T>
 export type Ansicht = 'stueckliste' | 'regeln' | 'auswirkung'
-export type BaumFilter = 'alle' | 'offen' | 'ergebnis' | 'unbewertet' | 'geaendert'
+export type BaumFilter = 'alle' | 'offen' | 'ergebnis' | 'raus' | 'unbewertet' | 'geaendert'
 
 export const useArbeit = defineStore('arbeit', () => {
   const auth = useAuth()
@@ -34,7 +34,9 @@ export const useArbeit = defineStore('arbeit', () => {
   const baumQ = ref('')
   const zu = ref(new Set<string>())
 
-  const entwurf = ref<{ regeln: Dict; aliasse: Dict }>(speicher.lies('bb.entwurf', { regeln: {}, aliasse: {} }))
+  // Browser-Speicher je Name: wechselt jemand am selben Rechner, sieht niemand fremde Entwürfe oder Bewertungen
+  const schluessel = (was: string) => `bb.${was}.${auth.name || '_'}`
+  const entwurf = ref<{ regeln: Dict; aliasse: Dict }>(speicher.lies(schluessel('entwurf'), { regeln: {}, aliasse: {} }))
   const basisRegeln = ref<Dict>({})
   const basisAliasse = ref<Dict>({})
   const merkmale = reactive<Dict>({})
@@ -79,8 +81,8 @@ export const useArbeit = defineStore('arbeit', () => {
     }
   }
   function speichereLokal() {
-    speicher.schreib('bb.entwurf', entwurf.value)
-    if (matnr.value) speicher.schreib(`bb.review.${matnr.value}`, { lokal: lokal.value, ergaenzt: lokalErgaenzt.value, entfernt: entfernt.value })
+    speicher.schreib(schluessel('entwurf'), entwurf.value)
+    if (matnr.value) speicher.schreib(schluessel(`review.${matnr.value}`), { lokal: lokal.value, ergaenzt: lokalErgaenzt.value, entfernt: entfernt.value })
     clearTimeout(speicherTimer)
     speicherTimer = window.setTimeout(() => entwurfAnServer(), 300)
   }
@@ -170,6 +172,7 @@ export const useArbeit = defineStore('arbeit', () => {
 
   function verschiebe(merkmal: string, wert: string, richtung: number) {
     const m = merkmalAktuell(merkmal)
+    if (!m) return
     const werte = m.werte.map((w: Dict) => ({ ...w }))
     const basis = werte.filter((w: Dict) => w.status === 'BASIS').sort((a: Dict, b: Dict) => a.rang - b.rang)
     const i = basis.findIndex((w: Dict) => w.wert === wert)
@@ -246,13 +249,13 @@ export const useArbeit = defineStore('arbeit', () => {
     try { materialien.value = await api('GET', '/materialien') } finally { materialienLaden.value = false }
   }
 
-  async function ladeMaterial(m: string, { behalteAuswahl = false } = {}) {
+  async function ladeMaterial(m: string, _opts: { behalteAuswahl?: boolean } = {}) {
     const neu = m !== matnr.value
     matnr.value = m
     if (neu) {
       auswahl.value = null
       fokusMerkmal.value = null
-      const r = speicher.lies<Dict>(`bb.review.${m}`, { lokal: {}, ergaenzt: [] })
+      const r = speicher.lies<Dict>(schluessel(`review.${m}`), { lokal: {}, ergaenzt: [] })
       lokal.value = r.lokal || {}
       lokalErgaenzt.value = r.ergaenzt || []
       entfernt.value = r.entfernt || []
@@ -266,11 +269,15 @@ export const useArbeit = defineStore('arbeit', () => {
       for (const x of d.merkmale) merkmale[x.merkmal] = x
       if (neu) {
         zu.value = new Set(d.positionen.filter((p: Dict) => p.hat_kinder && RAUS.has(p.status)).map((p: Dict) => p.id))
-        filter.value = 'alle'
+        // Arbeitskontext nach Neuladen der Seite wiederherstellen (Auswahl, Filter)
+        const k = speicher.lies<Dict>(schluessel('kontext'), {})
+        const passt = k.matnr === m
+        filter.value = passt && k.filter ? k.filter : 'alle'
         baumQ.value = ''
+        if (passt && k.auswahl && d.positionen.some((p: Dict) => p.id === k.auswahl)) zeigePosition(k.auswahl, null, false)
       }
-      if (!behalteAuswahl && neu) auswahl.value = null
     } catch (e) {
+      if (e instanceof ApiFehler && e.status === 503) { daten.value = null; return }
       if (matnr.value === m) daten.value = { fehler: (e as Error).message, matnr: m }
     } finally {
       if (matnr.value === m) laedt.value = false
@@ -312,6 +319,7 @@ export const useArbeit = defineStore('arbeit', () => {
       if (filter.value === 'offen') return OFFEN_STATUS.has(p.status)
       if (filter.value === 'ergebnis') return IM_ERGEBNIS.has(p.status)
       if (filter.value === 'geaendert') return Boolean(p.vorher)
+      if (filter.value === 'raus') return RAUS.has(p.status)
       if (filter.value === 'unbewertet') return !urteilVon(p.id)
       return true
     }
@@ -332,12 +340,29 @@ export const useArbeit = defineStore('arbeit', () => {
       for (const p of kinder.get(parent) || []) {
         if (!zeigen.has(p.id)) continue
         reihenfolge.push({ p, kontext: gefiltert && !treffer.has(p.id) })
-        if (!zu.value.has(p.id) || gefiltert) lauf(p.id)
+        if (!zu.value.has(p.id)) lauf(p.id)
       }
     }
     lauf(d.matnr)
     return { reihenfolge, treffer: treffer.size }
   })
+
+  // Beim Filtern/Suchen die Baugruppen über den Treffern aufklappen; danach wirkt Zuklappen wie gewohnt
+  function klappeTrefferAuf() {
+    const d = daten.value
+    if (!d?.positionen || (filter.value === 'alle' && !baumQ.value.trim())) return
+    const q = baumQ.value.trim().toUpperCase()
+    const s = new Set(zu.value)
+    for (const p of d.positionen) {
+      const treffer = (!q || (p.matnr || '').includes(q) || (p.kurztext || '').toUpperCase().includes(q)) &&
+        (filter.value === 'alle' || (filter.value === 'offen' ? OFFEN_STATUS.has(p.status) : filter.value === 'ergebnis' ? IM_ERGEBNIS.has(p.status)
+          : filter.value === 'raus' ? RAUS.has(p.status) : filter.value === 'geaendert' ? Boolean(p.vorher) : !urteilVon(p.id)))
+      if (!treffer) continue
+      for (let x = p.parent; x.includes('/'); x = x.slice(0, x.lastIndexOf('/'))) s.delete(x)
+    }
+    zu.value = s
+  }
+  watch([filter, baumQ], klappeTrefferAuf)
 
   function klappe(id: string, auf?: boolean) {
     const s = new Set(zu.value)
@@ -348,16 +373,27 @@ export const useArbeit = defineStore('arbeit', () => {
   function alleAuf() { zu.value = new Set() }
   function alleZu() { zu.value = new Set((daten.value?.positionen || []).filter((p: Dict) => p.hat_kinder).map((p: Dict) => p.id)) }
 
-  function zeigePosition(id: string, merkmal: string | null = null) {
+  function zeigePosition(id: string, merkmal: string | null = null, zurStueckliste = true) {
     // Vorfahren aufklappen, Filter lösen, auswählen
     const s = new Set(zu.value)
     for (let x = id; x.includes('/'); x = x.slice(0, x.lastIndexOf('/'))) s.delete(x.slice(0, x.lastIndexOf('/')))
     zu.value = s
     if (filter.value !== 'alle' || baumQ.value) { filter.value = 'alle'; baumQ.value = '' }
-    ansicht.value = 'stueckliste'
+    if (zurStueckliste) ansicht.value = 'stueckliste'
     auswahl.value = id
     fokusMerkmal.value = merkmal
   }
+
+  watch([matnr, auswahl, filter, ansicht], () => {
+    if (matnr.value) speicher.schreib(schluessel('kontext'), { matnr: matnr.value, auswahl: auswahl.value, filter: filter.value, ansicht: ansicht.value })
+  })
+
+  // Bestätigte Materialien sind gesperrt, bis die Bestätigung aufgehoben wird; mit Entwurf wird nicht bewertet
+  const bewertenGesperrt = computed<string | null>(() => {
+    if (!entwurfLeer.value) return 'Erst den Entwurf übernehmen oder verwerfen – bewertet wird der gespeicherte Regelstand.'
+    if (daten.value?.review?.bestaetigt) return 'Das Material ist bestätigt. Zum Ändern zuerst die Bestätigung aufheben.'
+    return null
+  })
 
   // ------------------------------------------------------------------------------------------ Bewertung
   const reviewStand = computed(() => {
@@ -392,19 +428,32 @@ export const useArbeit = defineStore('arbeit', () => {
 
   function setzeKommentar(id: string, kommentar: string) {
     const cur = urteilVon(id)
-    lokal.value = { ...lokal.value, [id]: { urteil: cur?.urteil || 'richtig', kommentar: kommentar || null } }
+    if (!cur?.urteil) return  // Kommentar gehört zu einem Urteil (Feld ist ohne Urteil gesperrt)
+    const alt = daten.value?.review?.urteile?.[id]
+    const l = { ...lokal.value, [id]: { urteil: cur.urteil, kommentar: kommentar || null } }
+    if (alt && alt.urteil === cur.urteil && (alt.kommentar || null) === (kommentar || null)) delete l[id]
+    lokal.value = l
     speichereLokal()
   }
 
   function alleSichtbarenRichtig() {
     let n = 0
     const l = { ...lokal.value }
-    for (const { p, kontext } of sichtbar.value.reihenfolge) if (!kontext && !urteilVon(p.id)) { l[p.id] = { urteil: 'richtig', kommentar: null }; n++ }
+    let offen = 0
+    for (const { p, kontext } of sichtbar.value.reihenfolge) {
+      if (kontext || urteilVon(p.id)) continue
+      if (OFFEN_STATUS.has(p.status)) { offen++; continue }  // „Manuell prüfen“ ist nie einfach „richtig“
+      l[p.id] = { urteil: 'richtig', kommentar: null }; n++
+    }
     lokal.value = l
     speichereLokal()
     const versteckt = (daten.value?.positionen || []).filter((p: Dict) => !urteilVon(p.id)).length
-    ui.melde(n ? `${mehrzahl(n, 'Zeile', 'Zeilen')} als „Richtig“ markiert – noch nicht gespeichert.` + (versteckt ? ` ${versteckt} zugeklappte oder ausgefilterte Zeilen sind noch ohne Urteil.` : '')
-      : 'Alle angezeigten Zeilen haben schon ein Urteil.')
+    const text = n ? `${mehrzahl(n, 'Zeile', 'Zeilen')} als „Richtig“ markiert – noch nicht gespeichert.` : 'Keine weiteren Zeilen zum Markieren.'
+    const zusatz = [
+      offen ? `${mehrzahl(offen, 'Position „Manuell prüfen“ bleibt', 'Positionen „Manuell prüfen“ bleiben')} offen – dort „Sollte rein/raus“ wählen oder die Regelfrage klären.` : '',
+      versteckt - offen > 0 ? `${versteckt - offen} zugeklappte oder ausgefilterte Zeilen sind noch ohne Urteil.` : '',
+    ].filter(Boolean).join(' ')
+    ui.melde(zusatz ? `${text} ${zusatz}` : text)
   }
 
   function ergaenze(e: Dict) {
@@ -430,6 +479,8 @@ export const useArbeit = defineStore('arbeit', () => {
     const rs = reviewStand.value
     if (!d?.positionen || d.review?.bestaetigt) return null
     if (!entwurfLeer.value) return { text: 'Erst den Entwurf übernehmen oder verwerfen.' }
+    const offen = d.positionen.filter((p: Dict) => OFFEN_STATUS.has(p.status))
+    if (offen.length && rs.bewertet) return { text: `${mehrzahl(offen.length, 'Position ist', 'Positionen sind')} noch „Manuell prüfen“ – erst die offenen Regelfragen klären.`, ziel: offen[0].id }
     const ohne = d.positionen.filter((p: Dict) => !urteilVon(p.id))
     if (ohne.length && !rs.bewertet) return null
     if (ohne.length) return { text: `Noch ${mehrzahl(ohne.length, 'Zeile', 'Zeilen')} ohne Urteil.`, ziel: ohne[0].id }
@@ -449,6 +500,7 @@ export const useArbeit = defineStore('arbeit', () => {
     const d = daten.value
     const rs = reviewStand.value
     if (!d?.positionen || rs.ungespeichert || !entwurfLeer.value || d.review?.veraltet || rs.ergaenzt) return false
+    if (d.positionen.some((p: Dict) => OFFEN_STATUS.has(p.status))) return false
     return d.positionen.every((p: Dict) => d.review?.urteile?.[p.id]?.urteil === 'richtig')
   })
 
@@ -461,7 +513,17 @@ export const useArbeit = defineStore('arbeit', () => {
         .map((e: Dict) => ({ parent_pfad: e.pfad.split('/+:')[0], matnr: e.matnr, menge: e.menge, meins: e.meins, kommentar: e.kommentar })),
       ...lokalErgaenzt.value,
     ]
-    const r = await api('POST', `/review/${d.matnr}`, { von: auth.name, urteile, ergaenzt })
+    let r: Dict
+    try {
+      r = await api('POST', `/review/${d.matnr}`, { von: auth.name, urteile, ergaenzt, stand: d.review?.stand ?? null })
+    } catch (e) {
+      if (e instanceof ApiFehler && e.status === 409) {
+        // Stand der Kollegin laden; die eigenen ungespeicherten Urteile bleiben darüber liegen
+        await ladeMaterial(d.matnr, { behalteAuswahl: true })
+        throw new ApiFehler(`${e.message}. Ihr Stand liegt jetzt über deren Bewertung – bitte kurz prüfen und erneut speichern.`, 409)
+      }
+      throw e
+    }
     bewertungVerwerfen()
     const teile = []
     if (r.urteile) teile.push(`${mehrzahl(r.urteile, 'Zeile', 'Zeilen')} bewertet`)
@@ -539,7 +601,8 @@ export const useArbeit = defineStore('arbeit', () => {
     oeffneMaterial, start, urteilVon, sichtbar, klappe, alleAuf, alleZu, zeigePosition, reviewStand, ergaenzteZeilen,
     setzeUrteil, setzeKommentar, alleSichtbarenRichtig, ergaenze, entferneErgaenzung, bewertungVerwerfen, sperrGrund,
     bestaetigbar, speichereReview, bestaetige, bestaetigungAufheben, exportiere, ladeRegelAnsicht, berechneAuswirkung,
-    oeffneMerkmal, setzeMerkmalName, offeneFragen, ladeServerEntwurf, entwurfGeaendert, speichereLokal,
+    oeffneMerkmal, setzeMerkmalName, offeneFragen, ladeServerEntwurf, entwurfGeaendert, speichereLokal, bewertenGesperrt,
+    klappeTrefferAuf,
   }
 })
 

@@ -31,7 +31,7 @@ lint:backend:
   script:
     - pip install --no-cache-dir "ruff>=0.5"
     - ruff check basis_bom tests
-    - ruff check --config backend/pyproject.toml backend/app backend/scripts || true
+    - ruff check --config backend/pyproject.toml backend/app backend/scripts
   rules:
     - changes: *backend-aenderungen
 

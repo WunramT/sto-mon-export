@@ -7,6 +7,7 @@ import vuetify from './plugins/vuetify'
 import './styles/main.scss'
 import { verbindeAuth } from './api/client'
 import { useAuth } from './stores/auth'
+import { useArbeit } from './stores/arbeit'
 
 const app = createApp(App)
 const pinia = createPinia()
@@ -15,7 +16,11 @@ app.use(pinia)
 const auth = useAuth(pinia)
 verbindeAuth(() => auth.token, () => {
   auth.abmelden()
-  if (router.currentRoute.value.name !== 'login') router.replace({ name: 'login', query: { abgelaufen: '1' } })
+  const r = router.currentRoute.value
+  if (r.name !== 'login') router.replace({ name: 'login', query: { abgelaufen: '1', ...(r.fullPath !== '/' ? { weiter: r.fullPath } : {}) } })
+}, () => {
+  // 503 mitten in der Arbeit (z. B. jemand lädt die Exporte neu): Datenstand holen → Ladebildschirm
+  useArbeit(pinia).ladeDatenstand().catch(() => {})
 })
 
 app.use(router)

@@ -32,7 +32,14 @@ cp sens.env.example ~/deployment/${P}_${ENV}/base/sens.env   # Vorlage: deploy/s
 chmod 600 ~/deployment/${P}_${ENV}/base/sens.env              # SECRET_KEY, MASTER_PASSWORD_ADMIN, DB-Zugang eintragen
 ```
 
-Die Datenbank legt das Jenkinsfile beim ersten Deploy an (`createdb` im Postgres-Container).
+Eigene Datenbank-Rolle (einmalig je Postgres-Container; Name/Passwort wie in `sens.env`):
+
+```bash
+docker exec -it postgres_db_dev psql -U postgres -c "CREATE ROLE konfig_stueckliste_export LOGIN PASSWORD '…'"
+```
+
+Die Datenbank legt das Jenkinsfile beim ersten Deploy an (`createdb -O <Rolle>`); die App legt darin ihre Schemas
+`sap_raw` und `basis_bom` selbst an.
 
 **Host-nginx** (wie bei MLP): Pfad unverändert an den Frontend-Container weiterreichen, z. B.
 

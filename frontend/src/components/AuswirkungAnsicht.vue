@@ -18,7 +18,12 @@
         </div>
         <v-btn size="small" variant="outlined" prepend-icon="mdi-refresh" :loading="a.auswirkungLaedt" @click="a.berechneAuswirkung()">Neu berechnen</v-btn>
       </div>
-      <v-table v-if="w.materialien.length" density="comfortable" class="tabelle" fixed-header height="100%">
+      <div v-if="!w.materialien.length" class="leer-hinweis">
+        <v-icon icon="mdi-check-circle-outline" size="36" color="success" class="mb-2" />
+        <p class="mb-1">Keine Basis-Stückliste ändert sich.</p>
+        <p class="text-body-2">Der Entwurf betrifft nur Werte, die nirgends den Ausschlag geben. Übernehmen ist unkritisch.</p>
+      </div>
+      <v-table v-else density="comfortable" class="tabelle" fixed-header height="100%">
         <thead>
           <tr><th>Material</th><th>Geänderte Positionen</th><th>In der Basis-Stückliste</th><th>Beispiele</th></tr>
         </thead>

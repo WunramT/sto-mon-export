@@ -17,10 +17,12 @@
 import { ref } from 'vue'
 import { useAuth } from '@/stores/auth'
 import { useArbeit } from '@/stores/arbeit'
+import { useUi } from '@/stores/ui'
 
 const emit = defineEmits<{ schliessen: [] }>()
 const auth = useAuth()
 const a = useArbeit()
+const ui = useUi()
 const name = ref(auth.name)
 const fehler = ref('')
 
@@ -28,8 +30,12 @@ async function speichern() {
   const n = name.value.trim()
   if (!n) { fehler.value = 'Bitte einen Namen eingeben.'; return }
   const wechsel = n !== auth.name
-  auth.setzeName(n)
+  if (wechsel && a.reviewStand.ungespeichert && !(await ui.frage({ titel: 'Name wechseln?', text: 'Ungespeicherte Bewertungen bleiben unter dem bisherigen Namen in diesem Browser erhalten.', ja: 'Wechseln' }))) return
   emit('schliessen')
-  if (wechsel) { await a.ladeServerEntwurf(); a.entwurfGeaendert() }
+  if (!wechsel) return
+  a.entwurfGeaendert()  // eigenen Entwurf noch sichern
+  auth.setzeName(n)
+  // Entwurf, Bewertungen und Kontext gehören zum Namen – frisch laden
+  setTimeout(() => window.location.reload(), 400)
 }
 </script>

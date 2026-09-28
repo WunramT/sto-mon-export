@@ -20,7 +20,7 @@
             <div v-if="d.review?.bestaetigt" class="bestaetigt">
               <v-icon icon="mdi-check-decagram" size="16" color="success" />
               Bestätigt von {{ d.review.bestaetigt.von }} am {{ fmtDatum(d.review.bestaetigt.datum) }}
-              <button type="button" class="link" @click="aufheben">aufheben</button>
+              <v-btn size="x-small" variant="text" class="ml-1" data-test="aufheben-knopf" @click="aufheben">Bestätigung aufheben</v-btn>
             </div>
             <div v-else-if="d.review?.stand" class="text-caption text-2">Zuletzt bewertet von {{ d.review.von }} · {{ fmtZeit(d.review.stand) }}</div>
           </div>
@@ -42,7 +42,7 @@
             <span class="wert mono">{{ n('manuell_prüfen', 'unterhalb_manuell') }}</span>
             <span class="name">offen – manuell prüfen</span>
           </button>
-          <button type="button" class="kennzahl k-aus" @click="a.filter = 'alle'">
+          <button type="button" class="kennzahl k-aus" :class="{ aktiv: a.filter === 'raus' }" @click="umschalten('raus')">
             <span class="wert mono">{{ n('ausgeschlossen', 'ausgeschlossen_vererbt', 'ignoriert') }}</span>
             <span class="name">nicht in der Basis</span>
           </button>
@@ -61,8 +61,10 @@
             <v-btn v-if="!a.entwurfLeer" value="geaendert" size="small">Geändert</v-btn>
           </v-btn-toggle>
           <v-text-field v-model="a.baumQ" placeholder="Im Baum suchen" prepend-inner-icon="mdi-magnify" clearable class="baum-suche" aria-label="Im Baum suchen" />
-          <v-btn size="small" variant="text" prepend-icon="mdi-unfold-more-horizontal" @click="a.alleAuf()">Aufklappen</v-btn>
-          <v-btn size="small" variant="text" prepend-icon="mdi-unfold-less-horizontal" @click="a.alleZu()">Zuklappen</v-btn>
+          <div class="klapp">
+            <v-tooltip text="Alle Baugruppen aufklappen"><template #activator="{ props }"><v-btn v-bind="props" size="small" variant="text" icon="mdi-unfold-more-horizontal" aria-label="Alle aufklappen" @click="a.alleAuf()" /></template></v-tooltip>
+            <v-tooltip text="Alle Baugruppen zuklappen"><template #activator="{ props }"><v-btn v-bind="props" size="small" variant="text" icon="mdi-unfold-less-horizontal" aria-label="Alle zuklappen" @click="a.alleZu()" /></template></v-tooltip>
+          </div>
         </div>
 
         <div class="review-leiste">
@@ -74,21 +76,27 @@
             </div>
             <v-progress-linear :model-value="rs.alle ? (100 * rs.bewertet) / rs.alle : 0" color="success" bg-color="#dfe3e7" height="5" rounded />
           </div>
-          <v-btn size="small" variant="outlined" :disabled="!a.entwurfLeer" prepend-icon="mdi-check-all" @click="a.alleSichtbarenRichtig()">Angezeigte als Richtig</v-btn>
-          <v-btn size="small" variant="outlined" :disabled="!a.entwurfLeer" prepend-icon="mdi-plus" @click="ui.oeffne('ergaenzen', { parentId: d.matnr })">Material ergänzen</v-btn>
-          <v-btn v-if="rs.ungespeichert" size="small" variant="text" :disabled="!a.entwurfLeer" @click="verwerfeBewertung">Verwerfen</v-btn>
-          <v-btn size="small" :color="rs.ungespeichert ? 'primary' : undefined" :variant="rs.ungespeichert ? 'flat' : 'outlined'"
-            :disabled="!rs.ungespeichert || !a.entwurfLeer" :loading="speichert" prepend-icon="mdi-content-save-outline" data-test="speichern-knopf" @click="speichere">
-            {{ rs.ungespeichert ? `Speichern (${rs.ungespeichert})` : 'Gespeichert' }}
-          </v-btn>
-          <v-chip v-if="d.review?.bestaetigt && !rs.ungespeichert" color="success" variant="flat" size="small" prepend-icon="mdi-check-decagram">Bestätigt</v-chip>
-          <v-tooltip v-else :text="a.bestaetigbar ? 'Material als vollständig geprüft markieren' : 'Möglich, sobald alle Zeilen gespeichert mit „Richtig“ bewertet sind'">
-            <template #activator="{ props }">
-              <span v-bind="props"><v-btn size="small" color="success" :disabled="!a.bestaetigbar" prepend-icon="mdi-check-decagram-outline" data-test="bestaetigen-knopf" @click="bestaetige">Bestätigen</v-btn></span>
-            </template>
-          </v-tooltip>
+          <div class="knoepfe">
+            <v-btn size="small" variant="outlined" :disabled="Boolean(a.bewertenGesperrt)" prepend-icon="mdi-check-all" @click="a.alleSichtbarenRichtig()">Angezeigte als Richtig</v-btn>
+            <v-btn size="small" variant="outlined" :disabled="Boolean(a.bewertenGesperrt)" prepend-icon="mdi-plus" @click="ui.oeffne('ergaenzen', { parentId: d.matnr })">Ergänzen</v-btn>
+            <v-btn v-if="rs.ungespeichert" size="small" variant="text" @click="verwerfeBewertung">Verwerfen</v-btn>
+            <v-btn size="small" :color="rs.ungespeichert ? 'primary' : undefined" :variant="rs.ungespeichert ? 'flat' : 'outlined'"
+              :disabled="!rs.ungespeichert || Boolean(a.bewertenGesperrt)" :loading="speichert" prepend-icon="mdi-content-save-outline" data-test="speichern-knopf" @click="speichere">
+              {{ rs.ungespeichert ? `Speichern (${rs.ungespeichert})` : 'Gespeichert' }}
+            </v-btn>
+            <v-chip v-if="d.review?.bestaetigt && !rs.ungespeichert" color="success" variant="flat" size="small" prepend-icon="mdi-check-decagram">Bestätigt</v-chip>
+            <v-tooltip v-else :text="a.bestaetigbar ? 'Material als vollständig geprüft markieren' : 'Möglich, sobald alle Zeilen gespeichert mit „Richtig“ bewertet und keine Positionen mehr offen sind'">
+              <template #activator="{ props }">
+                <span v-bind="props"><v-btn size="small" :color="a.bestaetigbar ? 'success' : undefined" :variant="a.bestaetigbar ? 'flat' : 'tonal'" :disabled="!a.bestaetigbar"
+                  prepend-icon="mdi-check-decagram-outline" data-test="bestaetigen-knopf" @click="bestaetige">Bestätigen</v-btn></span>
+              </template>
+            </v-tooltip>
+          </div>
         </div>
 
+        <v-alert v-if="d.review?.bestaetigt" type="success" variant="tonal" density="compact" class="mt-2 hinweis" icon="mdi-lock-outline">
+          Bestätigt und gesperrt – das Material dient als Referenz. Zum Ändern der Bewertung erst die Bestätigung aufheben.
+        </v-alert>
         <v-alert v-if="a.sperrGrund && a.entwurfLeer" type="info" variant="tonal" density="compact" class="mt-2 hinweis">
           <div class="d-flex align-center ga-3">
             <span class="flex-grow-1">Bestätigen noch nicht möglich: {{ a.sperrGrund.text }}</span>
@@ -105,7 +113,7 @@
       </header>
 
       <div class="baum-kopf" role="presentation">
-        <div>Position · Material</div><div class="r">Menge gesamt</div><div>Status</div><div class="r">Bewertung</div>
+        <div>Position · Material</div><div class="r" title="Menge gesamt, bezogen auf 1 Stück des Materials">Menge</div><div>Status</div><div class="r">Bewertung</div>
       </div>
       <div ref="baumEl" class="baum" role="tree" :aria-label="`Stückliste ${d.matnr}`" tabindex="0" @keydown="taste">
         <v-virtual-scroll v-if="zeilen.length" ref="scroller" :items="zeilen" item-height="50" height="100%">
@@ -137,7 +145,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useArbeit } from '@/stores/arbeit'
 import { useUi } from '@/stores/ui'
 import BaumZeile from '@/components/BaumZeile.vue'
-import { fmtDatum, fmtMenge, fmtZeit, mehrzahl } from '@/utils/texte'
+import { OFFEN_STATUS, fmtDatum, fmtMenge, fmtZeit, mehrzahl } from '@/utils/texte'
 
 const a = useArbeit()
 const ui = useUi()
@@ -182,7 +190,12 @@ function taste(ev: KeyboardEvent) {
   if (ev.key === 'ArrowDown') { ev.preventDefault(); a.auswahl = ids[Math.min(ids.length - 1, i + 1)] ?? ids[0] }
   else if (ev.key === 'ArrowUp') { ev.preventDefault(); a.auswahl = ids[Math.max(0, i - 1)] ?? ids[0] }
   else if ((ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') && a.auswahl) { ev.preventDefault(); a.klappe(a.auswahl, ev.key === 'ArrowRight') }
-  else if (a.auswahl && a.entwurfLeer && (ev.key === 'r' || ev.key === 'R')) { ev.preventDefault(); a.setzeUrteil(a.auswahl, a.urteilVon(a.auswahl)?.urteil === 'richtig' ? null : 'richtig') }
+  else if (a.auswahl && !a.bewertenGesperrt && (ev.key === 'r' || ev.key === 'R')) {
+    ev.preventDefault()
+    const p = a.sichtbar.reihenfolge.find((x) => x.p.id === a.auswahl)?.p
+    if (p && OFFEN_STATUS.has(p.status)) { ui.melde('„Manuell prüfen“ lässt sich nicht als „Richtig“ markieren – „Sollte rein“ oder „Sollte raus“ wählen.'); return }
+    a.setzeUrteil(a.auswahl, a.urteilVon(a.auswahl)?.urteil === 'richtig' ? null : 'richtig')
+  }
   else return
   nextTick(() => {
     const el = baumEl.value?.querySelector(`[data-id="${CSS.escape(a.auswahl || '')}"]`) as HTMLElement | null
@@ -210,6 +223,8 @@ async function bestaetige() {
 }
 
 async function aufheben() {
+  const ok = await ui.frage({ titel: 'Bestätigung aufheben?', text: `Material ${d.value.matnr} ist dann nicht mehr Referenz für spätere Läufe und kann wieder bewertet werden.`, ja: 'Aufheben' })
+  if (!ok) return
   try { await a.bestaetigungAufheben() } catch (e) { ui.melde((e as Error).message, true) }
 }
 
@@ -236,15 +251,17 @@ async function exportiere() {
 .kennzahl .wert small { font-size: 13px; color: var(--entwurf); }
 .kennzahl .name { font-size: 12px; color: var(--text-2); }
 .k-basis { border-left-color: var(--s-basis); } .k-offen { border-left-color: var(--s-manuell); } .k-aus { border-left-color: var(--s-aus); } .k-entwurf { border-left-color: var(--entwurf); }
-.werkzeuge { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.werkzeuge { display: flex; align-items: center; gap: 6px 8px; flex-wrap: wrap; }
+.werkzeuge .klapp { display: flex; }
 .segment :deep(.v-btn) { text-transform: none; letter-spacing: 0; }
 .baum-suche { max-width: 220px; min-width: 160px; }
-.review-leiste { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding: 8px 10px; border-radius: 8px; background: var(--flaeche-2); border: 1px solid var(--linie); flex-wrap: wrap; }
-.fortschritt { flex: 1; min-width: 200px; }
+.review-leiste { display: flex; align-items: center; gap: 10px 12px; margin-top: 10px; padding: 8px 10px; border-radius: 8px; background: var(--flaeche-2); border: 1px solid var(--linie); flex-wrap: wrap; }
+.fortschritt { flex: 1 1 180px; min-width: 160px; }
+.knoepfe { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .fz { font-size: 12.5px; margin-bottom: 4px; display: flex; gap: 6px; flex-wrap: wrap; }
 .ungespeichert { color: var(--s-manuell); font-weight: 550; }
 .hinweis { font-size: 13px; }
-.baum-kopf, :deep(.zeile) { display: grid; grid-template-columns: minmax(260px, 1fr) 110px 170px 200px; gap: 10px; align-items: center; padding: 0 18px; }
+.baum-kopf, :deep(.zeile) { display: grid; grid-template-columns: minmax(220px, 1fr) 96px 170px 184px; gap: 10px; align-items: center; padding: 0 18px; }
 .baum-kopf { flex: none; height: 32px; font-size: 11px; font-weight: 650; letter-spacing: .05em; text-transform: uppercase; color: var(--text-3); border-bottom: 1px solid var(--linie); background: var(--flaeche-2); }
 .r { text-align: right; }
 .baum { flex: 1; min-height: 0; outline: none; }
@@ -257,5 +274,5 @@ async function exportiere() {
 .pkt { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .pkt-ergaenzt { background: var(--entwurf); }
 .menge { text-align: right; font-size: 13px; }
-@media (max-width: 1400px) { .baum-kopf, :deep(.zeile) { grid-template-columns: minmax(200px, 1fr) 90px 150px 190px; } }
+@media (max-width: 1440px) { .baum-kopf, :deep(.zeile) { grid-template-columns: minmax(160px, 1fr) 76px 150px 76px; gap: 8px; padding: 0 12px; } .kopf { padding: 12px 12px 8px; } .kennzahl { min-width: 0; flex: 1 1 120px; } }
 </style>

@@ -6,11 +6,12 @@ import logging
 import threading
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.engine import Engine
+from starlette.exceptions import HTTPException
 
 from app.api.endpoints.stueckliste import NichtBereit, fehler_antwort
 from app.api.router import api_router
@@ -54,7 +55,13 @@ def create_app(eng: Engine | None = None, *, starte_laden: bool = True) -> FastA
 
     @app.exception_handler(HTTPException)
     def http_fehler(_req: Request, exc: HTTPException):
-        return JSONResponse(status_code=exc.status_code, content={"fehler": exc.detail}, headers=exc.headers)
+        text = exc.detail if isinstance(exc.detail, str) else "Fehler"
+        if exc.status_code == 404 and text == "Not Found":
+            text = "Nicht gefunden"
+        elif exc.status_code == 405:
+            text = "Methode nicht erlaubt"
+        kopf = getattr(exc, "headers", None)
+        return JSONResponse(status_code=exc.status_code, content={"fehler": text}, headers=kopf)
 
     @app.exception_handler(RequestValidationError)
     def eingabe_ungueltig(_req: Request, exc: RequestValidationError):

@@ -2,6 +2,7 @@
 # Spielt das Jenkins-Deployment lokal nach (gleiche docker-run-Aufrufe wie im Jenkinsfile), inkl. Host-nginx.
 # Aufruf: deploy/lokal-deploy.sh [backend-image] [frontend-image]   → http://localhost:8088/test/konfig-stueckliste-export/
 # Exporte: ./export (oder EXPORTS=/pfad); ohne Exporte lädt das Backend Beispieldaten (DEMO_FIXTURES=T).
+# RESET=1 legt die Datenbank neu an (frische Beispieldaten).
 set -euo pipefail
 BACKEND_IMAGE=${1:-kse-backend:dev}
 FRONTEND_IMAGE=${2:-kse-frontend:dev}
@@ -29,6 +30,10 @@ DATABASE_USER=postgres
 DATABASE_PASSWORD=postgres
 DEMO_FIXTURES=T
 ENV
+if [ -n "${RESET:-}" ]; then  # RESET=1: Datenbank neu (Beispieldaten frisch, z. B. vor E2E)
+  docker rm -f $FE $BE >/dev/null 2>&1 || true
+  docker exec $PG dropdb -U postgres --if-exists --force $DB
+fi
 docker exec $PG psql -U postgres -tAc "SELECT 1 FROM pg_database WHERE datname='$DB'" | grep -q 1 || docker exec $PG createdb -U postgres $DB
 docker run --rm --user root -v "$DEPLOY_DIR/out:/data/out" --entrypoint chown "$BACKEND_IMAGE" -R 1000:1000 /data/out
 docker rm -f $FE $BE >/dev/null 2>&1 || true

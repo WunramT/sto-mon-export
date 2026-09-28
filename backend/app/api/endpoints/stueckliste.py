@@ -23,13 +23,20 @@ class NichtBereit(Exception):
     pass
 
 
+NICHT_BEREIT_TEXT = {
+    "laedt": "Die Daten werden gerade geladen – bitte kurz warten.",
+    "leer": "Es sind noch keine SAP-Daten geladen.",
+    "fehler": "Das Laden der Daten ist fehlgeschlagen – siehe Datenstand.",
+}
+
+
 def datenstand(request: Request) -> Datenstand:
     return request.app.state.datenstand
 
 
 def dienst(ds: Datenstand = Depends(datenstand)) -> Dienst:
     if not ds.bereit:
-        raise NichtBereit()
+        raise NichtBereit(NICHT_BEREIT_TEXT.get(ds.status.zustand, NICHT_BEREIT_TEXT["laedt"]))
     return ds.dienst
 
 
@@ -39,7 +46,7 @@ def fehler_antwort(exc: Exception) -> JSONResponse:
     if isinstance(exc, Eingabefehler):
         return JSONResponse(status_code=400, content={"fehler": str(exc)})
     if isinstance(exc, NichtBereit):
-        return JSONResponse(status_code=503, content={"fehler": "Die Daten werden gerade geladen – bitte kurz warten."})
+        return JSONResponse(status_code=503, content={"fehler": str(exc) or NICHT_BEREIT_TEXT["laedt"]})
     raise exc
 
 
@@ -57,6 +64,8 @@ class ReviewDaten(BaseModel):
     von: str
     urteile: dict[str, dict] = Field(default_factory=dict)
     ergaenzt: list[dict] = Field(default_factory=list)
+    # Review-Stand, auf dem die Eingaben beruhen (Feld weglassen = ohne Konfliktprüfung, z. B. Skripte)
+    stand: str | None = None
 
 
 class Bestaetigung(BaseModel):
@@ -105,7 +114,8 @@ def uebernehmen(body: Uebernahme, d: Dienst = Depends(dienst)):
 
 @router.post("/review/{matnr}")
 def review(matnr: str, body: ReviewDaten, d: Dienst = Depends(dienst)):
-    return d.review_speichern(matnr, body.urteile, body.ergaenzt, body.von)
+    return d.review_speichern(matnr, body.urteile, body.ergaenzt, body.von, body.stand,
+                              pruefe_stand="stand" in body.model_fields_set)  # fmt: skip
 
 
 @router.post("/bestaetigen/{matnr}")
@@ -138,7 +148,7 @@ def entwurf_speichern(body: EntwurfDaten, d: Dienst = Depends(dienst)):
 @router.put("/merkmalname")
 def merkmalname(body: MerkmalName, d: Dienst = Depends(dienst)):
     d.merkmal_name_setzen(body.merkmal, body.text)
-    d._cache.clear()
+    d.cache_leeren()
     return {"ok": True}
 
 

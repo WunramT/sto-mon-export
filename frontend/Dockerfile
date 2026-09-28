@@ -17,6 +17,7 @@ FROM nginx:1.29-alpine
 
 COPY --from=builder /app/dist /usr/share/nginx/html.orig
 COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf.template
+COPY frontend/nginx-sicherheit.conf /etc/nginx/snippets/sicherheit.conf
 COPY frontend/entrypoint.sh /docker-entrypoint-custom.sh
 RUN chmod +x /docker-entrypoint-custom.sh && rm -f /etc/nginx/conf.d/default.conf
 

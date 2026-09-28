@@ -35,6 +35,22 @@ def client(app):
     return c
 
 
+@pytest.fixture()
+def regeln_sichern(fixture_db, app):
+    """Regeln nach dem Test exakt wiederherstellen (auch „keine Regel“ statt OFFEN) – fixture_db ist sitzungsweit."""
+    import sqlalchemy as sa
+
+    with fixture_db.begin() as con:
+        max_id = con.execute(sa.text("SELECT coalesce(max(id), 0) FROM basis_bom.regel")).scalar()
+        t0 = con.execute(sa.text("SELECT clock_timestamp()")).scalar()
+    yield
+    with fixture_db.begin() as con:
+        con.execute(sa.text("DELETE FROM basis_bom.regel WHERE id > :i"), {"i": max_id})
+        con.execute(sa.text("UPDATE basis_bom.regel SET gueltig_bis = NULL WHERE gueltig_bis >= :t"), {"t": t0})
+        con.execute(sa.text("DELETE FROM basis_bom.bestaetigt"))
+    app.state.datenstand.dienst.cache_leeren()
+
+
 def test_anmeldung(app):
     c = TestClient(app)
     assert c.get("/api/health").json()["status"] == "ok"
@@ -132,13 +148,23 @@ def test_kuerzel_im_entwurf(client):
     assert p["fragen"][0]["text"] == "Sitztiefe: Auf dieser Stückliste kommt nur 1 vor – ist 1 ein Basiswert?"
 
 
-def test_review_bestaetigen_und_regression(client, fixture_db):
+def test_review_bestaetigen_und_regression(client, fixture_db, regeln_sichern):
     d = client.post("/api/material/90000006", json={"entwurf": None}).json()
     alle = {p["id"]: {"urteil": "richtig"} for p in d["positionen"]}
     teil = dict(list(alle.items())[:1])
     r = client.post("/api/review/90000006", json={"von": "Erika", "urteile": teil})
     assert r.status_code == 200
     assert client.post("/api/bestaetigen/90000006", json={"von": "Erika"}).status_code == 400  # unvollständig
+    assert client.post("/api/review/90000006", json={"von": "Erika", "urteile": alle}).status_code == 200
+    # offene Position (technische Regel unentschieden) → nicht bestätigbar, auch wenn alles „richtig“ ist
+    offen = client.post("/api/bestaetigen/90000006", json={"von": "Erika"})
+    assert offen.status_code == 400 and "manuell prüfen" in offen.json()["fehler"]
+    rules.setze_regel(fixture_db, "PP4000_KS_VERERBEN", "vorhanden", "BASIS", 1, geaendert_von="test")
+    rules.setze_regel(fixture_db, "SITZQUALI", "FK", "BASIS", 2, geaendert_von="test")
+    client.app.state.datenstand.dienst.cache_leeren()
+    d = client.post("/api/material/90000006", json={"entwurf": None}).json()
+    assert {p["status"] for p in d["positionen"]}.isdisjoint({"manuell_prüfen", "unterhalb_manuell"}), d["positionen"]
+    alle = {p["id"]: {"urteil": "richtig"} for p in d["positionen"]}
     assert client.post("/api/review/90000006", json={"von": "Erika", "urteile": alle}).status_code == 200
     d2 = client.post("/api/material/90000006", json={"entwurf": None}).json()
     assert len(d2["review"]["urteile"]) == len(alle) and d2["review"]["veraltet"] == 0
@@ -152,7 +178,9 @@ def test_review_bestaetigen_und_regression(client, fixture_db):
     fixture_db_status = regress.regress(fixture_db, lid)
     assert fixture_db_status.empty
     client.post("/api/bestaetigen/90000006", json={"von": "Erika"})
-    client.post("/api/uebernehmen", json={"entwurf": FK_BASIS, "von": "Test"})
+    fk_nie = {"regeln": [{"merkmal": "SITZQUALI", "wert": "FK", "status": "NICHT_BASIS", "rang": None,
+                          "vorher": {"status": "BASIS", "rang": 2}}]}  # fmt: skip
+    assert client.post("/api/uebernehmen", json={"entwurf": fk_nie, "von": "Test"}).status_code == 200
     try:
         d3 = client.post("/api/material/90000006", json={"entwurf": None}).json()
         assert d3["review"]["veraltet"] == 1
@@ -161,7 +189,55 @@ def test_review_bestaetigen_und_regression(client, fixture_db):
         lid2, _ = lauf.fuehre_aufloesung_aus(fixture_db, ["90000006"])
         assert not regress.regress(fixture_db, lid2).empty
     finally:
-        rules.setze_regel(fixture_db, "SITZQUALI", "FK", "OFFEN", geaendert_von="test")
+        pass
+
+
+def test_review_konflikt(client):
+    d = client.post("/api/material/90000005", json={"entwurf": None}).json()
+    stand = d["review"]["stand"]
+    eine = {d["positionen"][0]["id"]: {"urteil": "richtig"}}
+    assert client.post("/api/review/90000005", json={"von": "A", "urteile": eine, "stand": stand}).status_code == 200
+    # B hat noch den alten Stand geladen → Konflikt statt Überschreiben
+    k = client.post("/api/review/90000005", json={"von": "B", "urteile": {}, "stand": stand})
+    assert k.status_code == 409 and "A hat dieses Material" in k.json()["fehler"]
+    neu = client.post("/api/material/90000005", json={"entwurf": None}).json()["review"]["stand"]
+    assert client.post("/api/review/90000005", json={"von": "B", "urteile": eine, "stand": neu}).status_code == 200
+
+
+def test_fehlerformat_und_nicht_bereit(app, client):
+    assert client.get("/api/gibtsnicht").json() == {"fehler": "Nicht gefunden"}
+    ds = app.state.datenstand
+    alt = ds.status.zustand
+    ds.status.zustand = "fehler"
+    try:
+        r = client.get("/api/meta")
+        assert r.status_code == 503 and "fehlgeschlagen" in r.json()["fehler"]
+    finally:
+        ds.status.zustand = alt
+
+
+def test_neu_laden_skript(monkeypatch):
+    """scripts/neu_laden.py (Jenkins RELOAD_EXPORTS): Methode, Body und Token kommen beim Backend an."""
+    import importlib.util
+    import io
+    import json
+
+    spec = importlib.util.spec_from_file_location("neu_laden", Path(__file__).parent.parent / "backend/scripts/neu_laden.py")
+    modul = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(modul)
+    gesehen = []
+
+    def urlopen(req, timeout):
+        gesehen.append((req.get_method(), req.full_url, req.data, req.headers.get("Authorization")))
+        antwort = {"access_token": "T"} if req.full_url.endswith("/auth/login") else {"dateien": [], "exports_dir": "/x"}
+        return io.BytesIO(json.dumps(antwort).encode())
+
+    monkeypatch.setattr(modul.urllib.request, "urlopen", urlopen)
+    monkeypatch.setenv("MASTER_PASSWORD_ADMIN", "pw")
+    monkeypatch.setattr(modul.sys, "argv", ["neu_laden.py"])
+    modul.main()
+    assert gesehen[0][0] == "POST" and json.loads(gesehen[0][2]) == {"passwort": "pw"}
+    assert gesehen[1][:2] == ("POST", modul.BASIS + "/datenstand/neu-laden") and gesehen[1][3] == "Bearer T"
 
 
 def test_ergaenzen_und_ungueltig(client):

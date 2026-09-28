@@ -16,9 +16,9 @@ BASIS = os.environ.get("BACKEND_URL", "http://127.0.0.1:8000/api")
 
 
 def aufruf(methode: str, pfad: str, daten: dict | None = None, token: str | None = None) -> dict:
-    req = urllib.request.Request(BASIS + pfad,  # noqa: S310 - feste http-URL aus der Umgebung method=methode, data=json.dumps(daten or {}).encode(),
-                                 headers={"Content-Type": "application/json",
-                                          **({"Authorization": f"Bearer {token}"} if token else {})})  # fmt: skip
+    kopf = {"Content-Type": "application/json", **({"Authorization": f"Bearer {token}"} if token else {})}
+    daten_bytes = json.dumps(daten or {}).encode() if methode != "GET" else None
+    req = urllib.request.Request(BASIS + pfad, data=daten_bytes, headers=kopf, method=methode)  # noqa: S310
     try:
         with urllib.request.urlopen(req, timeout=30) as r:  # noqa: S310
             return json.load(r)

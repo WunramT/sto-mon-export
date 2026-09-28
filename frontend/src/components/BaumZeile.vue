@@ -1,10 +1,11 @@
 <template>
   <div class="zeile" :class="{ gewaehlt: a.auswahl === p.id, geaendert: p.vorher, raus: RAUS.has(p.status), kontext }"
     role="treeitem" :aria-level="p.ebene" :aria-selected="a.auswahl === p.id" :aria-expanded="p.hat_kinder ? !a.zu.has(p.id) : undefined"
+    :aria-label="`${p.posnr} ${p.matnr || (p.postp === 'K' ? 'Klassenposition' : 'Textposition')} ${p.kurztext || ''}, ${STATUS[p.status]?.text || p.status}`"
     :data-id="p.id" @click="waehle">
     <div class="name">
       <span class="einzug" :style="{ width: `${(p.ebene - 1) * 18}px` }" />
-      <button v-if="p.hat_kinder" type="button" class="pfeil" tabindex="-1" :aria-label="a.zu.has(p.id) ? 'aufklappen' : 'zuklappen'" @click.stop="a.klappe(p.id)">
+      <button v-if="p.hat_kinder" type="button" class="pfeil" tabindex="-1" aria-hidden="true" @click.stop="a.klappe(p.id)">
         <v-icon :icon="a.zu.has(p.id) ? 'mdi-chevron-right' : 'mdi-chevron-down'" size="18" />
       </button>
       <span v-else class="pfeil leer" />
@@ -30,7 +31,7 @@ import { computed } from 'vue'
 import { useArbeit } from '@/stores/arbeit'
 import StatusPille from '@/components/StatusPille.vue'
 import BewertungKnoepfe from '@/components/BewertungKnoepfe.vue'
-import { RAUS, fmtMenge } from '@/utils/texte'
+import { RAUS, STATUS, fmtMenge } from '@/utils/texte'
 
 const props = defineProps<{ p: any; kontext?: boolean }>()
 const a = useArbeit()

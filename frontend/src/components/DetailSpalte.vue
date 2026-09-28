@@ -81,11 +81,11 @@
 
       <section class="abschnitt">
         <h3 class="abschnitt-titel">Bewertung</h3>
-        <p v-if="!a.entwurfLeer" class="unter">Erst den Entwurf übernehmen oder verwerfen.</p>
-        <BewertungKnoepfe :p="p" class="justify-start mb-2" />
-        <v-textarea :model-value="urteil?.kommentar || ''" placeholder="Kommentar (optional) – z. B. warum die Zeile falsch ist" rows="2" auto-grow
-          :disabled="!a.entwurfLeer" aria-label="Kommentar" @update:model-value="(v) => a.setzeKommentar(p.id, v)" />
-        <v-btn v-if="p.hat_kinder" size="small" variant="outlined" class="mt-2" prepend-icon="mdi-plus" :disabled="!a.entwurfLeer"
+        <p v-if="a.bewertenGesperrt" class="unter">{{ a.bewertenGesperrt }}</p>
+        <BewertungKnoepfe :p="p" class="justify-start mb-2 gross" />
+        <v-textarea :model-value="urteil?.kommentar || ''" :placeholder="urteil?.urteil ? 'Kommentar (optional) – z. B. warum die Zeile falsch ist' : 'Erst bewerten, dann kommentieren'" rows="2" auto-grow
+          :disabled="Boolean(a.bewertenGesperrt) || !urteil?.urteil" aria-label="Kommentar" @update:model-value="(v) => a.setzeKommentar(p.id, v)" />
+        <v-btn v-if="p.hat_kinder" size="small" variant="outlined" class="mt-2" prepend-icon="mdi-plus" :disabled="Boolean(a.bewertenGesperrt)"
           @click="ui.oeffne('ergaenzen', { parentId: p.id })">Fehlendes Material unter dieser Baugruppe</v-btn>
       </section>
 
@@ -195,4 +195,6 @@ watch(() => a.fokusMerkmal, (m) => { if (m && p.value) nextTick(() => fokus(m)) 
 .kv small { display: block; color: var(--text-3); font-size: 11.5px; }
 .einfach { padding-left: 18px; font-size: 13px; color: var(--text-2); line-height: 1.55; }
 .min-w-0 { min-width: 0; }
+.gross :deep(.bew) { width: auto; padding: 4px 10px; }
+.gross :deep(.bew .txt) { display: inline; }
 </style>

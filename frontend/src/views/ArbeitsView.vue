@@ -66,6 +66,7 @@ async function pruefeDatenstand() {
         await a.start()
         if (a.startFehler) { startFehler.value = a.startFehler; timer = window.setTimeout(pruefeDatenstand, 5000); return }
         oeffneAusRoute(true)
+        if (a.matnr && !a.daten) a.ladeMaterial(a.matnr, { behalteAuswahl: true })
       }
       return
     }
@@ -97,7 +98,7 @@ onBeforeUnmount(() => { clearTimeout(timer); window.removeEventListener('beforeu
 
 // Neu-Laden aus dem Datenstand-Dialog: Status verfolgen
 watch(() => a.datenstand?.zustand, (z, alt) => {
-  if (z === 'laedt' && alt === 'bereit') { a.gestartet = false; pruefeDatenstand() }
+  if (z !== 'bereit' && alt === 'bereit') { a.gestartet = false; pruefeDatenstand() }
   if (z === 'bereit' && alt === 'laedt') ui.melde('Datenstand aktualisiert.')
 })
 </script>
@@ -105,7 +106,7 @@ watch(() => a.datenstand?.zustand, (z, alt) => {
 <style scoped>
 .arbeit-main { height: 100vh; }
 .innen { height: 100%; display: flex; flex-direction: column; min-height: 0; }
-.raster { flex: 1; min-height: 0; display: grid; grid-template-columns: 300px minmax(0, 1fr) 400px; }
+.raster { flex: 1; min-height: 0; display: grid; grid-template-columns: 290px minmax(0, 1fr) 400px; }
 .spalte { min-height: 0; overflow: hidden; display: flex; flex-direction: column; background: var(--flaeche); }
 .links { border-right: 1px solid var(--linie); }
 .rechts { border-left: 1px solid var(--linie); background: var(--flaeche-2); }
@@ -113,6 +114,6 @@ watch(() => a.datenstand?.zustand, (z, alt) => {
 .reiter { border-bottom: 1px solid var(--linie); flex: none; }
 .reiter :deep(.v-tab) { text-transform: none; letter-spacing: 0; font-weight: 550; }
 .ansicht { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-@media (max-width: 1400px) { .raster { grid-template-columns: 260px minmax(0, 1fr) 360px; } }
-@media (max-width: 1150px) { .raster { grid-template-columns: 230px minmax(0, 1fr) 320px; } }
+@media (max-width: 1440px) { .raster { grid-template-columns: 240px minmax(0, 1fr) 340px; } }
+@media (max-width: 1200px) { .raster { grid-template-columns: 220px minmax(0, 1fr) 300px; } }
 </style>

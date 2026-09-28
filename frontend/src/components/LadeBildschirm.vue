@@ -4,7 +4,7 @@
       <template v-if="fehler && !info">
         <v-icon icon="mdi-lan-disconnect" size="40" color="error" class="mb-3" />
         <h1 class="text-h6 mb-2">Server nicht erreichbar</h1>
-        <p class="text-body-2 text-2 mb-5">{{ fehler }} – ich versuche es automatisch weiter.</p>
+        <p class="text-body-2 text-2 mb-5">{{ fehler }}<br>Die Seite versucht es automatisch weiter.</p>
         <v-btn color="primary" variant="tonal" @click="$emit('neu')">Jetzt erneut versuchen</v-btn>
       </template>
 
@@ -28,7 +28,7 @@
         <v-icon icon="mdi-database-off-outline" size="40" color="warning" class="mb-3" />
         <h1 class="text-h6 mb-2">Noch keine Daten</h1>
         <p class="text-body-2 text-2 mb-2">{{ info.meldung }}</p>
-        <p class="text-body-2 text-2 mb-5">Die SAP-Exporte (siehe <code>docs/EXPORTE.md</code>) in das Export-Verzeichnis auf dem Server legen, dann hier laden.</p>
+        <p class="text-body-2 text-2 mb-5">Die SAP-Exporte müssen im Export-Verzeichnis auf dem Server liegen (Ansprechpartner: das Projektteam). Danach hier laden.</p>
         <v-btn color="primary" :loading="startet" @click="neuLaden">Exporte laden</v-btn>
       </template>
 

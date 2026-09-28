@@ -63,9 +63,12 @@ async function absenden() {
   laedt.value = true
   try {
     if (!nurName.value || !auth.angemeldet) await auth.anmelden(passwort.value)
+    const wechsel = auth.name && auth.name !== name.value.trim()
     auth.setzeName(name.value)
     const weiter = typeof route.query.weiter === 'string' && route.query.weiter.startsWith('/') ? route.query.weiter : '/'
-    await router.replace(weiter)
+    // andere Person am selben Browser: ohne Reste der vorherigen Sitzung starten
+    if (wechsel) window.location.assign(router.resolve(weiter).href)
+    else await router.replace(weiter)
   } catch (e) {
     fehler.value = (e as Error).message
   } finally {

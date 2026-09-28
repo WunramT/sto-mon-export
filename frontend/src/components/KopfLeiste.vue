@@ -55,7 +55,8 @@ const untertitel = computed(() => {
 async function abmelden() {
   if (a.reviewStand.ungespeichert && !(await ui.frage({ titel: 'Abmelden?', text: 'Ungespeicherte Bewertungen bleiben in diesem Browser erhalten und sind nach der nächsten Anmeldung wieder da.', ja: 'Abmelden' }))) return
   auth.abmelden()
-  router.replace({ name: 'login' })
+  // vollständig neu laden: kein Zustand der vorherigen Person bleibt im Speicher
+  window.location.assign(router.resolve({ name: 'login' }).href)
 }
 </script>
 

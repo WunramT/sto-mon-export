@@ -261,3 +261,25 @@ ul.einfach { padding-left: 18px; margin: 6px 0; }
 .link-knopf { border: none; background: none; color: inherit; text-decoration: underline; cursor: pointer; font-size: 11px; margin-left: 8px; padding: 0; }
 .dialog code { background: var(--hg); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
 .zustand-filter { gap: 4px; }
+
+/* Runde 5 */
+.details .wert-zeile { grid-template-columns: 26px minmax(0, 1fr) 28px; grid-template-rows: auto auto; row-gap: 4px; }
+.details .wert-zeile .rang { grid-column: 1; grid-row: 1 / span 2; }
+.details .wert-zeile .wname { grid-column: 2; grid-row: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.details .wert-zeile .wname small { display: inline; margin-left: 6px; }
+.details .wert-zeile .status-wahl { grid-column: 2; grid-row: 2; justify-self: start; }
+.details .wert-zeile .pfeile, .details .wert-zeile > div:last-child:empty { grid-column: 3; grid-row: 1 / span 2; }
+.wname small { white-space: nowrap; }
+.umbenennen { margin-left: 0; padding: 0; font-size: 12px; opacity: .7; text-decoration: underline dotted; }
+.merkmal-karte:hover .umbenennen { opacity: 1; }
+.zeile1 { overflow: hidden; text-overflow: ellipsis; }
+.name-text .kt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sperr-hinweis { display: flex; gap: 10px; align-items: center; justify-content: space-between; margin-top: 8px; padding: 8px 10px; border-radius: var(--radius);
+  background: #fff8e1; color: #6b4f00; font-size: 12px; }
+.toast { display: flex; gap: 12px; align-items: center; }
+.toast-aktion { background: none; border: 1px solid rgba(255,255,255,.5); color: #fff; border-radius: 6px; padding: 3px 10px; cursor: pointer; font-weight: 600; }
+.auswahl-liste { width: 100%; margin-top: 6px; border: 1px solid var(--linie-stark); border-radius: 6px; padding: 4px; font-size: 13px; }
+.auswahl-liste option { padding: 4px 6px; border-radius: 4px; }
+.dialog input[type=search] { width: 100%; padding: 7px 10px; border: 1px solid var(--linie-stark); border-radius: 6px; }
+.details .merkmal-kopf { flex-wrap: wrap; align-items: flex-start; }
+.details .merkmal-kopf > div:first-child { flex: 1 1 200px; }

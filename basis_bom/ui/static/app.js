@@ -40,14 +40,14 @@ async function api(methode, url, body) {
 const zahlFormat = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 3 });
 const fmtMenge = (m, me) => (m === null || m === undefined ? "–" : `${zahlFormat.format(m)} ${me || ""}`.trim());
 
-function toast(text, fehler = false) {
+function toast(text, fehler = false, aktion = null) {
   if (typeof text !== "string") text = String(text);
   const t = $("#toast");
-  t.textContent = text;
+  ersetze(t, h("span", {}, text), aktion ? h("button", { type: "button", class: "toast-aktion", onclick: () => { t.hidden = true; aktion.tun(); } }, aktion.text) : null);
   t.className = "toast" + (fehler ? " fehler" : "");
   t.hidden = false;
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => (t.hidden = true), fehler ? 6000 : 3000);
+  toast._t = setTimeout(() => (t.hidden = true), fehler || aktion ? 6000 : 3000);
 }
 
 const speicher = {
@@ -120,6 +120,19 @@ function speichereLokal() {
     clearTimeout(entwurfSpeichernTimer);
     entwurfSpeichernTimer = setTimeout(() => api("PUT", "/api/entwurf", { name: S.name, entwurf: S.entwurf }).catch(() => {}), 300);
   }
+}
+
+function bereinigeEntwurf() {
+  let n = 0;
+  for (const [key, e] of Object.entries(S.entwurf.regeln)) {
+    const jetzt = S.basisRegeln[key] || { status: "OFFEN", rang: null };
+    if (jetzt.status === e.status && (jetzt.rang ?? null) === (e.rang ?? null)) { delete S.entwurf.regeln[key]; n++; }
+  }
+  for (const [key, e] of Object.entries(S.entwurf.aliasse)) {
+    const jetzt = S.basisAliasse[key];
+    if (jetzt && (jetzt.merkmal || null) === (e.merkmal || null) && jetzt.status === e.status) { delete S.entwurf.aliasse[key]; n++; }
+  }
+  return n;
 }
 
 async function ladeServerEntwurf() {
@@ -278,10 +291,10 @@ function merkmalKarte(m, { hierWerte = null, gewaehlt, hervor = false } = {}) {
   const karte = h("div", { class: "merkmal-karte" + (hervor ? " hervor" : ""), "data-merkmal": m.merkmal },
     h("div", { class: "merkmal-kopf" },
       h("div", {}, h("div", { class: "mname" }, mName(m.merkmal),
-        mName(m.merkmal) !== m.merkmal ? h("span", { class: "mcode" }, m.merkmal) : null,
-        h("button", { type: "button", class: "umbenennen", title: "Anzeigenamen ändern (so heißt das Merkmal in dieser Oberfläche)", "aria-label": `Anzeigenamen für ${m.merkmal} ändern`,
-          onclick: (ev) => { ev.stopPropagation(); namenDialog(m.merkmal); } }, "✎ Name")),
-        h("div", { class: "art" }, art)),
+        mName(m.merkmal) !== m.merkmal ? h("span", { class: "mcode" }, m.merkmal) : null),
+        h("div", { class: "art" }, art, " · ",
+          h("button", { type: "button", class: "umbenennen", title: "Anzeigenamen ändern (so heißt das Merkmal in dieser Oberfläche)", "aria-label": `Anzeigenamen für ${m.merkmal} ändern`,
+            onclick: (ev) => { ev.stopPropagation(); namenDialog(m.merkmal); } }, "✎ Name ändern"))),
       gewaehlt !== undefined ? h("span", { class: "status " + (gewaehlt ? "s-basis" : "s-manuell_prüfen") },
         m.systemregel ? (gewaehlt ? "hier: gilt" : "hier: noch offen")
           : gewaehlt ? `hier gewählt: ${gewaehlt}` : "hier: noch kein Basiswert") : null),
@@ -330,8 +343,11 @@ function zeichneEntwurf() {
   ersetze(box, ...[...Object.values(S.entwurf.regeln), ...Object.values(S.entwurf.aliasse)].map((e) =>
     h("span", { class: "chip" }, entwurfEintragText(e),
       h("button", { type: "button", title: "Diese Änderung zurücknehmen", "aria-label": "zurücknehmen", onclick: () => {
-        if (e.alias) delete S.entwurf.aliasse[e.alias]; else delete S.entwurf.regeln[`${e.merkmal}|${e.wert}`];
+        const topf = e.alias ? S.entwurf.aliasse : S.entwurf.regeln;
+        const key = e.alias ? e.alias : `${e.merkmal}|${e.wert}`;
+        delete topf[key];
         entwurfGeaendert();
+        toast(`Zurückgenommen: ${entwurfEintragText(e)}`, false, { text: "Rückgängig", tun: () => { topf[key] = e; entwurfGeaendert(); } });
       } }, "✕"))));
   $("#nutzer-knopf").textContent = S.name || "Name eingeben";
 }
@@ -479,6 +495,8 @@ function zeichneStueckliste() {
         ? h("span", { class: "status s-basis gross" }, "✓ Bestätigt")
         : h("button", { type: "button", class: "knopf haupt klein", disabled: !bestaetigbar(rs), title: bestaetigbar(rs) ? "Material als vollständig geprüft markieren" : "Möglich, sobald alle Zeilen gespeichert mit „✓ Richtig“ bewertet sind",
           onclick: bestaetige }, "Material bestätigen")),
+    (() => { const g = sperrGrund(rs); return g && entwurfLeer() ? h("div", { class: "sperr-hinweis" }, h("span", {}, "Bestätigen noch nicht möglich: ", g.text),
+      g.ziel ? h("button", { type: "button", class: "knopf klein", onclick: () => { S.filter = "alle"; zeichneStueckliste(); waehle(g.ziel); } }, "Zeigen") : null) : null; })(),
     !entwurfLeer() ? h("div", { class: "hinweis" }, "Sie sehen die Vorschau Ihres Entwurfs. Bewerten ist erst nach „Übernehmen“ oder „Verwerfen“ möglich.") : null,
     d.review?.veraltet ? h("div", { class: "hinweis" }, `Seit der letzten Bewertung haben sich Regeln geändert: ${d.review.veraltet} Positionen haben jetzt einen anderen Status. Bitte diese Zeilen neu bewerten.`) : null,
     d.warnungen?.length ? h("div", { class: "hinweis info" }, d.warnungen.join(" · ")) : null);
@@ -504,8 +522,8 @@ function zeichneBaum() {
           onclick: (ev) => { ev.stopPropagation(); if (S.zu.has(p.id)) S.zu.delete(p.id); else S.zu.add(p.id); zeichneBaum(); } }, S.zu.has(p.id) ? "▶" : "▼"),
         h("span", { class: `punkt p-${p.status}` }),
         h("span", { class: "name-text" },
-          h("span", { class: "zeile1" }, h("span", { class: "pos" }, p.posnr), h("span", { class: "mat" }, p.matnr || (p.postp === "K" ? "Klassenposition (Material manuell wählen)" : "Textposition"))),
-          p.kurztext ? h("span", { class: "kt" }, p.kurztext) : null)),
+          h("span", { class: "zeile1" }, h("span", { class: "pos" }, p.posnr), h("span", { class: "mat" }, p.matnr || (p.postp === "K" ? "Klassenposition" : "Textposition"))),
+          p.kurztext ? h("span", { class: "kt" }, p.kurztext) : !p.matnr && p.postp === "K" ? h("span", { class: "kt" }, "Material wird manuell gewählt") : null)),
       h("div", { class: "menge" }, fmtMenge(p.menge_kum, p.meins)),
       h("div", {}, statusPill(p.status, p.vorher)),
       bewertungsKnoepfe(p));
@@ -533,8 +551,12 @@ function waehle(id) {
   S.fokusMerkmal = null;
   zeichneBaum();
   zeichneDetails();
+  zeigeZeile(id);
+}
+
+function zeigeZeile(id) {
   const el = document.querySelector(`.zeile[data-id="${CSS.escape(id)}"]`);
-  if (el) el.focus({ preventScroll: false });
+  if (el) { el.scrollIntoView({ block: "center" }); el.focus({ preventScroll: true }); }
 }
 
 function alleSichtbarenRichtig() {
@@ -546,6 +568,25 @@ function alleSichtbarenRichtig() {
   const versteckt = S.daten.positionen.filter((p) => !urteilVon(p.id)).length;
   toast(n ? `${n} Zeilen als „Richtig“ markiert – noch nicht gespeichert.` + (versteckt ? ` ${versteckt} zugeklappte oder ausgefilterte Zeilen sind noch offen.` : "")
     : "Alle angezeigten Zeilen haben schon ein Urteil.");
+}
+
+function sperrGrund(rs) {
+  const d = S.daten;
+  if (!d || d.review?.bestaetigt) return null;
+  if (!entwurfLeer()) return { text: "Erst den Entwurf übernehmen oder verwerfen." };
+  const ohne = d.positionen.filter((p) => !urteilVon(p.id));
+  if (ohne.length && !rs.bewertet) return null;
+  if (ohne.length) return { text: `Noch ${ohne.length} Zeile${ohne.length === 1 ? "" : "n"} ohne Urteil.`, ziel: ohne[0].id };
+  if (rs.ungespeichert) return { text: "Erst speichern, dann bestätigen." };
+  const falsch = d.positionen.filter((p) => urteilVon(p.id)?.urteil !== "richtig");
+  if (falsch.length || rs.ergaenzt) {
+    const teile = [];
+    if (falsch.length) teile.push(`${falsch.length} Zeile${falsch.length === 1 ? "" : "n"} als falsch markiert`);
+    if (rs.ergaenzt) teile.push(`${rs.ergaenzt} Material${rs.ergaenzt === 1 ? "" : "ien"} ergänzt`);
+    return { text: `${teile.join(", ")}. Regel anpassen und neu bewerten – oder so lassen: die Abweichung ist gespeichert.`, ziel: falsch[0]?.id };
+  }
+  if (d.review?.veraltet) return { text: `${d.review.veraltet} Zeilen haben seit der Bewertung einen anderen Status – bitte neu bewerten.` };
+  return null;
 }
 
 function bestaetigbar(rs) {
@@ -716,7 +757,12 @@ function fragenListe(titel, fragen, zusatz, beiKlick) {
 
 function materialUebersicht() {
   const d = S.daten;
-  const zeige = (f) => { S.auswahl = f.beispiel; S.fokusMerkmal = f.merkmal || null; zeichneBaum(); zeichneDetails(); };
+  const zeige = (f) => {
+    S.auswahl = f.beispiel; S.fokusMerkmal = f.merkmal || null;
+    for (let id = f.beispiel; id.includes("/"); id = id.slice(0, id.lastIndexOf("/"))) S.zu.delete(id.slice(0, id.lastIndexOf("/")));
+    if (S.filter !== "alle") S.filter = "alle";
+    zeichneStueckliste(); zeichneDetails(); zeigeZeile(f.beispiel);
+  };
   const pos = (f) => `betrifft ${f.positionen} Position${f.positionen === 1 ? "" : "en"} in diesem Material`;
   return h("div", { class: "details" },
     h("h2", {}, "Was ist zu tun?"),
@@ -878,40 +924,48 @@ function namenDialog(merkmal) {
 }
 
 function kuerzelDialog(alias) {
-  const bekannte = [...new Set([...(S.meta?.merkmale || []), ...Object.keys(S.merkmale), ...Object.keys(S.basisRegeln).map((k) => k.split("|")[0])])].sort();
-  const liste = h("datalist", { id: "merkmal-liste" }, ...bekannte.map((m) => h("option", { value: m, label: mName(m) !== m ? mName(m) : null })));
-  const eingabe = h("input", { type: "text", list: "merkmal-liste", placeholder: "Merkmal wählen oder SAP-Namen eintippen", "aria-label": "Merkmal" });
-  const info = h("div", { class: "feld-info" }, " ");
+  const technisch = new Set(Object.keys(S.basisRegeln).filter((k) => k.endsWith("|vorhanden")).map((k) => k.split("|")[0]));
+  const bekannte = [...new Set([...(S.meta?.merkmale || []), ...Object.keys(S.merkmale), ...Object.keys(S.basisRegeln).map((k) => k.split("|")[0])])]
+    .filter((m) => !technisch.has(m) && !Object.values(S.merkmale).some((x) => x.merkmal === m && x.systemregel))
+    .sort((a, b) => mName(a).localeCompare(mName(b), "de"));
   const bsp = S.meta?.kuerzel_beispiele?.[alias] || [];
-  let bestaetigtNeu = "";
-  eingabe.addEventListener("input", () => {
-    const m = eingabe.value.trim().toUpperCase();
+  const suche = h("input", { type: "search", placeholder: "Suchen, z. B. „Sitz“", "aria-label": "Merkmal suchen" });
+  const auswahl = h("select", { size: "8", "aria-label": "Merkmal", class: "auswahl-liste" });
+  const neu = h("input", { type: "text", placeholder: "SAP-Name des neuen Merkmals", "aria-label": "Neues Merkmal", hidden: true });
+  const info = h("div", { class: "feld-info" }, " ");
+  const fuelle = () => {
+    const q = suche.value.trim().toUpperCase();
+    const treffer = bekannte.filter((m) => !q || m.includes(q) || mName(m).toUpperCase().includes(q));
+    ersetze(auswahl, ...treffer.map((m) => h("option", { value: m }, mName(m) !== m ? `${mName(m)}  (${m})` : m)),
+      h("option", { value: "__neu__" }, "➕ Anderes Merkmal (SAP-Namen eintippen) …"));
+    if (treffer.length === 1) auswahl.value = treffer[0];
+  };
+  const aktualisiere = () => {
+    neu.hidden = auswahl.value !== "__neu__";
     info.className = "feld-info";
-    info.textContent = !m ? " " : bekannte.includes(m) ? `✓ ${mName(m)}` : `„${m}“ ist bisher kein bekanntes Merkmal – beim Zuordnen wird es neu angelegt.`;
-    if (m && !bekannte.includes(m)) info.className = "feld-info warn";
-  });
+    if (auswahl.value === "__neu__") { info.textContent = "Neues Merkmal: wird beim Zuordnen angelegt."; info.className = "feld-info warn"; neu.focus(); }
+    else info.textContent = auswahl.value ? `✓ ${mName(auswahl.value)}` : " ";
+  };
+  suche.addEventListener("input", () => { fuelle(); aktualisiere(); });
+  auswahl.addEventListener("change", aktualisiere);
+  auswahl.addEventListener("dblclick", () => ok());
+  fuelle();
   const ok = () => {
-    const m = eingabe.value.trim().toUpperCase();
-    if (!m) { info.textContent = "Bitte ein Merkmal wählen."; info.className = "feld-info warn"; return; }
-    if (!bekannte.includes(m) && bestaetigtNeu !== m) {
-      bestaetigtNeu = m;
-      info.textContent = `„${m}“ ist neu. Nochmal auf „Zuordnen“ klicken, um das Merkmal anzulegen.`;
-      info.className = "feld-info warn";
-      return;
-    }
+    const m = (auswahl.value === "__neu__" ? neu.value : auswahl.value || "").trim().toUpperCase();
+    if (!m) { info.textContent = "Bitte ein Merkmal auswählen."; info.className = "feld-info warn"; return; }
     setzeKuerzel(alias, m, "BASIS");
     schliesseDialog();
     toast(`Kürzel ${alias} → ${mName(m)} im Entwurf.`);
   };
-  eingabe.addEventListener("keydown", (ev) => { if (ev.key === "Enter") ok(); });
   dialog(`Kürzel „${alias}“ zuordnen`, [
     h("p", {}, "Zu welchem Merkmal gehört dieses Kürzel in den Bedingungsnamen?"),
-    bsp.length ? h("p", { class: "unter" }, "Kommt vor in: ", ...bsp.map((b, i) => [i ? ", " : "", h("code", {}, b)])) : null,
-    bsp.length ? h("p", { class: "unter" }, `Der Teil nach dem Kürzel ist der Wert (z. B. „${bsp[0].slice(alias.length) || "…"}“).`) : null,
-    eingabe, liste, info,
+    bsp.length ? h("p", { class: "unter" }, "Kommt vor in: ", ...bsp.map((b, i) => [i ? ", " : "", h("code", {}, b)]),
+      ` – der Teil nach „${alias}“ ist der Wert.`) : null,
+    suche, auswahl, neu, info,
     h("p", { class: "unter", style: "color:var(--text-2)" }, "Die Zuordnung landet im Entwurf – der Baum zeigt sofort, was sich ändert.")],
   [h("button", { type: "button", class: "knopf", onclick: schliesseDialog }, "Abbrechen"),
     h("button", { type: "button", class: "knopf haupt", onclick: ok }, "Zuordnen")]);
+  setTimeout(() => suche.focus(), 0);
 }
 
 async function uebernehmenDialog() {
@@ -1033,6 +1087,8 @@ async function start() {
   window.addEventListener("beforeunload", (ev) => { if (Object.keys(S.lokal).length || S.lokalErgaenzt.length || S.entfernt.length) { ev.preventDefault(); ev.returnValue = ""; } });
   try {
     await Promise.all([ladeMeta(), ladeBasisRegeln(), ladeMaterialien(), ladeServerEntwurf()]);
+    const alt = bereinigeEntwurf();
+    if (alt) { speichereLokal(); toast(`${alt} Änderung${alt === 1 ? " war" : "en waren"} schon übernommen und ${alt === 1 ? "wurde" : "wurden"} aus dem Entwurf entfernt.`); }
   } catch (e) { toast(`Server nicht erreichbar: ${e.message}`, true); return; }
   zeichneEntwurf();
   const ausHash = (location.hash.match(/#\/material\/(\w+)/) || [])[1];

@@ -95,6 +95,7 @@ const S = {
   merkmale: {},
   lokal: {},
   lokalErgaenzt: [],
+  entfernt: [],
   regelnQ: "",
   regelnNurOffen: true,
   regelnNurMaterial: false,
@@ -107,9 +108,22 @@ const entwurfPayload = () => ({ regeln: Object.values(S.entwurf.regeln), aliasse
 const entwurfAnzahl = () => Object.keys(S.entwurf.regeln).length + Object.keys(S.entwurf.aliasse).length;
 const entwurfLeer = () => entwurfAnzahl() === 0;
 
+let entwurfSpeichernTimer = null;
 function speichereLokal() {
   speicher.schreib("bb.entwurf", S.entwurf);
-  if (S.matnr) speicher.schreib(`bb.review.${S.matnr}`, { lokal: S.lokal, ergaenzt: S.lokalErgaenzt });
+  if (S.matnr) speicher.schreib(`bb.review.${S.matnr}`, { lokal: S.lokal, ergaenzt: S.lokalErgaenzt, entfernt: S.entfernt });
+  if (S.name) {
+    clearTimeout(entwurfSpeichernTimer);
+    entwurfSpeichernTimer = setTimeout(() => api("PUT", "/api/entwurf", { name: S.name, entwurf: S.entwurf }).catch(() => {}), 300);
+  }
+}
+
+async function ladeServerEntwurf() {
+  if (!S.name) return;
+  try {
+    const r = await api("GET", `/api/entwurf?name=${encodeURIComponent(S.name)}`);
+    if (r.entwurf) S.entwurf = { regeln: r.entwurf.regeln || {}, aliasse: r.entwurf.aliasse || {} };
+  } catch { /* offline: lokaler Stand bleibt */ }
 }
 
 // ------------------------------------------------------------------------------------------------ Laden
@@ -124,7 +138,7 @@ async function ladeBasisRegeln() {
 async function ladeMeta() {
   S.meta = await api("GET", "/api/meta");
   const m = S.meta;
-  $("#meta").textContent = `Datenstand ${new Date(m.stichtag).toLocaleDateString("de-DE")} · ${m.regeln} Regelwerte, davon ${m.offen} offen`;
+  $("#meta").textContent = `Datenstand ${new Date(m.stichtag).toLocaleDateString("de-DE")} · ${m.offen ? `${m.offen} offene Regelfragen` : "keine offenen Regelfragen"}`;
   $("#offen-zahl").textContent = m.offen || "";
 }
 
@@ -141,6 +155,7 @@ async function ladeMaterial(matnr, { behalteAuswahl = false } = {}) {
     const r = speicher.lies(`bb.review.${matnr}`, { lokal: {}, ergaenzt: [] });
     S.lokal = r.lokal || {};
     S.lokalErgaenzt = r.ergaenzt || [];
+    S.entfernt = r.entfernt || [];
     location.hash = `#/material/${matnr}`;
   }
   S.laedt = true;
@@ -229,12 +244,16 @@ function setzeKuerzel(alias, merkmal, status) {
   entwurfGeaendert();
 }
 
+function regelStatusText(status, rang, systemregel) {
+  if (systemregel) return { BASIS: "Gilt", OFFEN: "Offen", NICHT_BASIS: "Gilt nicht" }[status];
+  return status === "BASIS" ? `Basis (Rang ${rang})` : REGEL_STATUS[status];
+}
+
 function entwurfEintragText(e) {
   if (e.alias) return `Kürzel ${e.alias} → ${e.merkmal || "–"}`;
-  const s = e.status === "BASIS" ? `Basis (Rang ${e.rang})` : REGEL_STATUS[e.status];
-  const v = e.vorher.status === "BASIS" ? `Basis (Rang ${e.vorher.rang})` : REGEL_STATUS[e.vorher.status];
-  const w = e.wert === "vorhanden" ? "" : ` = ${e.wert}`;
-  return `${e.merkmal}${w}: ${v} → ${s}`;
+  const sys = e.wert === "vorhanden";
+  const w = sys ? "" : ` = ${e.wert}`;
+  return `${e.merkmal}${w}: ${regelStatusText(e.vorher.status, e.vorher.rang, sys)} → ${regelStatusText(e.status, e.rang, sys)}`;
 }
 
 function merkmalKarte(m, { hierWerte = null, gewaehlt, hervor = false } = {}) {
@@ -262,7 +281,9 @@ function merkmalKarte(m, { hierWerte = null, gewaehlt, hervor = false } = {}) {
       h("div", { class: "rang" + (w.status === "BASIS" ? "" : " kein"), title: w.status === "BASIS" ? "Rang" : "" },
         w.status === "BASIS" && !m.sitzhoehe ? w.rang : "–"),
       h("div", { class: "wname" }, m.systemregel ? "Regel aktiv" : w.wert,
-        hier ? h("small", {}, gewaehlt === w.wert ? "★ hier gewählt" : "kommt hier vor") : (w.vorkommen ? h("small", {}, `${w.vorkommen}× im Material`) : null)),
+        hier ? h("small", {}, gewaehlt === w.wert ? "★ hier gewählt" : "kommt hier vor")
+          : w.stuecklisten ? h("small", {}, `in ${w.stuecklisten} Stückliste${w.stuecklisten === 1 ? "" : "n"}`)
+            : w.vorkommen ? h("small", {}, `${w.vorkommen}× im Material`) : null),
       h("div", { class: "status-wahl", role: "group", "aria-label": `Status für ${m.merkmal} ${w.wert}` },
         knoepfe.map(([st, text, cls]) => h("button", {
           type: "button", class: (w.status === st ? `an ${cls}` : ""), "aria-pressed": w.status === st ? "true" : "false",
@@ -354,13 +375,13 @@ function bewertungsKnoepfe(p) {
   const gesperrt = !entwurfLeer();
   const titelSperre = "Erst den Entwurf übernehmen oder verwerfen – bewertet wird der gespeicherte Regelstand.";
   const imErg = IM_ERGEBNIS.has(p.status);
-  const zweit = imErg ? ["gehoert_nicht_rein", "Raus", "Gehört nicht in die Basis-Stückliste"] : ["fehlt", "Rein", "Gehört in die Basis-Stückliste, fehlt aber"];
+  const zweit = imErg ? ["gehoert_nicht_rein", "Sollte raus", "Falsch: gehört NICHT in die Basis-Stückliste"] : ["fehlt", "Sollte rein", "Falsch: gehört in die Basis-Stückliste"];
   const knopf = (urteil, text, titel, cls) => h("button", {
     type: "button", class: "bew" + (u?.urteil === urteil ? ` an ${cls}` : ""), disabled: gesperrt, title: gesperrt ? titelSperre : titel,
     "aria-pressed": u?.urteil === urteil ? "true" : "false",
     onclick: (ev) => { ev.stopPropagation(); setzeUrteil(p.id, u?.urteil === urteil ? null : urteil); },
   }, text);
-  return h("div", { class: "bewertung" }, knopf("richtig", "✓ Stimmt", "Der Status dieser Zeile ist richtig", "ok"), knopf(zweit[0], zweit[1], zweit[2], "nein"));
+  return h("div", { class: "bewertung" }, knopf("richtig", "✓ Richtig", "Richtig: der Status dieser Zeile passt", "ok"), knopf(zweit[0], zweit[1], zweit[2], "nein"));
 }
 
 function setzeUrteil(id, urteil) {
@@ -382,8 +403,8 @@ function reviewStand() {
   const alle = d.positionen.length;
   let bewertet = 0, richtig = 0;
   for (const p of d.positionen) { const u = urteilVon(p.id); if (u) { bewertet++; if (u.urteil === "richtig") richtig++; } }
-  const ungespeichert = Object.keys(S.lokal).length + S.lokalErgaenzt.length;
-  const ergaenzt = (d.review?.ergaenzt?.length || 0) + S.lokalErgaenzt.length;
+  const ungespeichert = Object.keys(S.lokal).length + S.lokalErgaenzt.length + S.entfernt.length;
+  const ergaenzt = (d.review?.ergaenzt || []).filter((e) => !S.entfernt.includes(e.pfad)).length + S.lokalErgaenzt.length;
   return { alle, bewertet, richtig, ungespeichert, ergaenzt };
 }
 
@@ -415,19 +436,25 @@ function zeichneStueckliste() {
       h("div", { class: "segment", role: "group", "aria-label": "Ansicht filtern" },
         [["alle", "Alle"], ["offen", "Offene"], ["ergebnis", "Basis-Ergebnis"], ["unbewertet", "Unbewertet"], ...(entwurfLeer() ? [] : [["geaendert", "Geändert"]])].map(([f, t]) =>
           h("button", { type: "button", class: S.filter === f ? "aktiv" : "", "aria-pressed": S.filter === f ? "true" : "false", onclick: () => { S.filter = f; zeichneStueckliste(); } }, t))),
-      h("input", { class: "baum-suche", type: "search", placeholder: "In Stückliste suchen", value: S.baumQ,
+      h("input", { class: "baum-suche", type: "search", placeholder: "Im Baum suchen", value: S.baumQ,
         oninput: (ev) => { S.baumQ = ev.target.value; zeichneBaum(); } }),
-      h("button", { type: "button", class: "knopf leise klein", onclick: () => { S.zu.clear(); zeichneStueckliste(); } }, "Alles aufklappen"),
-      h("button", { type: "button", class: "knopf leise klein", onclick: () => { S.zu = new Set(d.positionen.filter((p) => p.hat_kinder).map((p) => p.id)); zeichneStueckliste(); } }, "Alles zuklappen")),
+      h("div", { class: "segment", role: "group", "aria-label": "Baum auf- und zuklappen" },
+        h("button", { type: "button", title: "Alle Baugruppen aufklappen", onclick: () => { S.zu.clear(); zeichneStueckliste(); } }, "Aufklappen"),
+        h("button", { type: "button", title: "Alle Baugruppen zuklappen", onclick: () => { S.zu = new Set(d.positionen.filter((p) => p.hat_kinder).map((p) => p.id)); zeichneStueckliste(); } }, "Zuklappen"))),
     h("div", { class: "review-leiste" },
       h("div", { class: "fortschritt" },
         h("div", {}, `Bewertet: ${rs.bewertet} von ${rs.alle}` + (rs.ungespeichert ? ` · ${rs.ungespeichert} nicht gespeichert` : "") + (rs.ergaenzt ? ` · ${rs.ergaenzt} ergänzt` : "")),
-        h("div", { class: "balken" }, h("div", { style: `width:${rs.alle ? Math.round((100 * rs.bewertet) / rs.alle) : 0}%` }))),
-      h("button", { type: "button", class: "knopf klein", disabled: !entwurfLeer(), title: "Alle aktuell angezeigten Zeilen ohne Urteil als „Stimmt“ markieren",
-        onclick: alleSichtbarenRichtig }, "Angezeigte ohne Urteil: ✓ Stimmt"),
-      h("button", { type: "button", class: "knopf klein", disabled: !rs.ungespeichert || !entwurfLeer(), onclick: speichereReview }, "Bewertung speichern"),
-      h("button", { type: "button", class: "knopf haupt klein", disabled: !bestaetigbar(rs), title: bestaetigbar(rs) ? "Material als geprüft markieren" : "Möglich, wenn alle Zeilen gespeichert mit „Stimmt“ bewertet sind",
-        onclick: bestaetige }, "Material bestätigen")),
+        h("div", { class: "balken" }, h("div", { style: `width:${rs.alle ? Math.round((100 * rs.bewertet) / rs.alle) : 0}%` })),
+        h("div", { class: "erklaerzeile" }, "✓ Richtig = Status passt · „Sollte raus“ / „Sollte rein“ = Status ist falsch")),
+      h("button", { type: "button", class: "knopf klein", disabled: !entwurfLeer(), title: "Alle Zeilen, die gerade angezeigt werden und noch kein Urteil haben, als „Richtig“ markieren",
+        onclick: alleSichtbarenRichtig }, "Angezeigte als ✓ Richtig"),
+      h("button", { type: "button", class: "knopf klein", disabled: !entwurfLeer(), onclick: () => ergaenzenDialog(d.matnr) }, "+ Material ergänzen"),
+      h("button", { type: "button", class: "knopf klein" + (rs.ungespeichert ? " betont" : ""), disabled: !rs.ungespeichert || !entwurfLeer(), onclick: speichereReview },
+        rs.ungespeichert ? `Speichern (${rs.ungespeichert})` : "Gespeichert"),
+      d.review?.bestaetigt && !rs.ungespeichert
+        ? h("span", { class: "status s-basis gross" }, "✓ Bestätigt")
+        : h("button", { type: "button", class: "knopf haupt klein", disabled: !bestaetigbar(rs), title: bestaetigbar(rs) ? "Material als vollständig geprüft markieren" : "Möglich, sobald alle Zeilen gespeichert mit „✓ Richtig“ bewertet sind",
+          onclick: bestaetige }, "Material bestätigen")),
     !entwurfLeer() ? h("div", { class: "hinweis" }, "Du siehst die Vorschau deines Entwurfs. Bewerten ist erst nach „Übernehmen“ oder „Verwerfen“ möglich.") : null,
     d.review?.veraltet ? h("div", { class: "hinweis" }, `Seit der letzten Bewertung haben sich Regeln geändert: ${d.review.veraltet} Positionen haben jetzt einen anderen Status. Bitte diese Zeilen neu bewerten.`) : null,
     d.warnungen?.length ? h("div", { class: "hinweis info" }, d.warnungen.join(" · ")) : null);
@@ -452,21 +479,27 @@ function zeichneBaum() {
         h("button", { type: "button", class: "pfeil" + (p.hat_kinder ? "" : " leer"), "aria-label": S.zu.has(p.id) ? "aufklappen" : "zuklappen", tabindex: "-1",
           onclick: (ev) => { ev.stopPropagation(); if (S.zu.has(p.id)) S.zu.delete(p.id); else S.zu.add(p.id); zeichneBaum(); } }, S.zu.has(p.id) ? "▶" : "▼"),
         h("span", { class: `punkt p-${p.status}` }),
-        h("span", { class: "name-text" }, h("span", { class: "pos" }, p.posnr), h("span", { class: "mat" }, p.matnr || (p.postp === "K" ? "Klassenposition" : "Textposition")),
-          h("span", { class: "kt" }, p.kurztext))),
+        h("span", { class: "name-text" },
+          h("span", { class: "zeile1" }, h("span", { class: "pos" }, p.posnr), h("span", { class: "mat" }, p.matnr || (p.postp === "K" ? "Klassenposition" : "Textposition"))),
+          p.kurztext ? h("span", { class: "kt" }, p.kurztext) : null)),
       h("div", { class: "menge" }, fmtMenge(p.menge_kum, p.meins)),
       h("div", {}, statusPill(p.status, p.vorher)),
       bewertungsKnoepfe(p));
   });
-  const ergaenzt = [...(S.daten.review?.ergaenzt || []), ...S.lokalErgaenzt.map((e) => ({ ...e, lokal: true }))];
-  const zusatz = ergaenzt.length ? [h("div", { class: "gruppen-titel" }, "Als fehlend ergänzt"), ...ergaenzt.map((e, i) =>
+  const gespeichert = (S.daten.review?.ergaenzt || []).filter((e) => !S.entfernt.includes(e.pfad));
+  const ergaenzt = [...gespeichert.map((e) => ({ ...e, lokal: false })), ...S.lokalErgaenzt.map((e, i) => ({ ...e, lokal: true, index: i }))];
+  const zusatz = ergaenzt.length ? [h("div", { class: "gruppen-titel" }, "Als fehlend ergänzt"), ...ergaenzt.map((e) =>
     h("div", { class: "zeile" },
-      h("div", { class: "name" }, h("span", { class: "punkt p-basis" }), h("span", { class: "name-text" }, h("span", { class: "mat" }, e.matnr),
-        h("span", { class: "kt" }, `unter ${e.parent_matnr || (e.parent_pfad || "").split("/").pop().split(":").pop()}` + (e.kommentar ? ` – ${e.kommentar}` : "")))),
+      h("div", { class: "name" }, h("span", { class: "punkt p-basis" }), h("span", { class: "name-text" },
+        h("span", { class: "zeile1" }, h("span", { class: "mat" }, e.matnr), e.kurztext ? h("span", { class: "kt inline" }, e.kurztext) : null),
+        h("span", { class: "kt" }, `unter ${e.parent_matnr}` + (e.kommentar ? ` – ${e.kommentar}` : "")))),
       h("div", { class: "menge" }, e.menge ?? "–"),
-      h("div", {}, h("span", { class: "status s-basis" }, e.lokal ? "ergänzt (nicht gespeichert)" : "ergänzt")),
-      h("div", { class: "bewertung" }, e.lokal ? h("button", { type: "button", class: "bew", onclick: () => { S.lokalErgaenzt.splice(i - (S.daten.review?.ergaenzt?.length || 0), 1); speichereLokal(); zeichneStueckliste(); } }, "Entfernen") : null)))] : [];
-  baum.replaceChildren(h("div", { class: "baum-kopf", role: "presentation" }, h("div", {}, "Position · Material"), h("div", { style: "text-align:right" }, "Menge"), h("div", {}, "Status"), h("div", { style: "text-align:right" }, "Bewertung")),
+      h("div", {}, h("span", { class: "status s-basis" }, e.lokal ? "ergänzt · nicht gespeichert" : "ergänzt")),
+      h("div", { class: "bewertung" }, h("button", { type: "button", class: "bew", disabled: !entwurfLeer(), title: "Ergänzung wieder entfernen", onclick: () => {
+        if (e.lokal) S.lokalErgaenzt.splice(e.index, 1); else S.entfernt.push(e.pfad);
+        speichereLokal(); zeichneStueckliste();
+      } }, "Entfernen"))))] : [];
+  baum.replaceChildren(h("div", { class: "baum-kopf", role: "presentation" }, h("div", {}, "Position · Material"), h("div", { style: "text-align:right" }, "Menge gesamt"), h("div", {}, "Status"), h("div", { style: "text-align:right" }, "Ihre Bewertung")),
     ...(zeilen.length ? zeilen : [h("div", { class: "leer-hinweis" }, "Keine Positionen für diesen Filter.")]), ...zusatz);
   baum.setAttribute("role", "tree");
 }
@@ -486,7 +519,9 @@ function alleSichtbarenRichtig() {
   for (const { p, kontext } of reihenfolge) if (!kontext && !urteilVon(p.id)) { S.lokal[p.id] = { urteil: "richtig", kommentar: null }; n++; }
   speichereLokal();
   zeichneStueckliste();
-  toast(n ? `${n} Zeilen als „Stimmt“ markiert – noch nicht gespeichert.` : "Alle angezeigten Zeilen haben schon ein Urteil.");
+  const versteckt = S.daten.positionen.filter((p) => !urteilVon(p.id)).length;
+  toast(n ? `${n} Zeilen als „Richtig“ markiert – noch nicht gespeichert.` + (versteckt ? ` ${versteckt} zugeklappte oder ausgefilterte Zeilen sind noch offen.` : "")
+    : "Alle angezeigten Zeilen haben schon ein Urteil.");
 }
 
 function bestaetigbar(rs) {
@@ -500,11 +535,12 @@ async function speichereReview() {
   const d = S.daten;
   const urteile = {};
   for (const p of d.positionen) { const u = urteilVon(p.id); if (u) urteile[p.id] = u; }
-  const ergaenzt = [...(d.review?.ergaenzt || []).map((e) => ({ parent_pfad: e.pfad.split("/+:")[0], matnr: e.matnr, menge: e.menge, kommentar: e.kommentar })), ...S.lokalErgaenzt];
+  const ergaenzt = [...(d.review?.ergaenzt || []).filter((e) => !S.entfernt.includes(e.pfad)).map((e) => ({ parent_pfad: e.pfad.split("/+:")[0], matnr: e.matnr, menge: e.menge, kommentar: e.kommentar })), ...S.lokalErgaenzt];
   try {
     const r = await api("POST", `/api/review/${d.matnr}`, { von: S.name, urteile, ergaenzt });
     S.lokal = {};
     S.lokalErgaenzt = [];
+    S.entfernt = [];
     speichereLokal();
     toast(`Bewertung gespeichert (${r.urteile} Zeilen${r.ergaenzt ? `, ${r.ergaenzt} ergänzt` : ""}).`);
     await Promise.all([ladeMaterial(d.matnr, { behalteAuswahl: true }), ladeMaterialien()]);
@@ -549,7 +585,7 @@ function zeichneDetails() {
       h("div", { style: "display:flex;gap:6px;margin-bottom:6px" }, bewertungsKnoepfe(p)),
       h("textarea", { placeholder: "Kommentar (optional)", disabled: !entwurfLeer(), "aria-label": "Kommentar",
         oninput: (ev) => { const cur = urteilVon(p.id); S.lokal[p.id] = { urteil: cur?.urteil || "richtig", kommentar: ev.target.value }; speichereLokal(); } }, u?.kommentar || ""),
-      p.hat_kinder || true ? ergaenzenFormular(p) : null),
+      p.hat_kinder ? h("button", { type: "button", class: "knopf klein", style: "margin-top:8px", disabled: !entwurfLeer(), onclick: () => ergaenzenDialog(p.id) }, "+ Fehlendes Material unter dieser Baugruppe") : null),
     h("div", { class: "abschnitt" }, h("h3", {}, "Bedingungen (SAP)"),
       p.bedingungen.length ? p.bedingungen.map((b) => h("div", { class: "bedingung" },
         h("div", { class: "roh" }, b.name, b.rolle === "prozedur_ignoriert" ? " · Prozedur, wird ignoriert" : ""),
@@ -561,8 +597,8 @@ function zeichneDetails() {
       p.prozeduren.length ? h("p", { class: "unter" }, `Ignorierte Prozeduren: ${p.prozeduren.join(", ")}`) : null),
     h("div", { class: "abschnitt" }, h("h3", {}, "Daten"),
       h("dl", { class: "kv" },
-        h("dt", {}, "Menge"), h("dd", {}, fmtMenge(p.menge, p.meins)),
-        h("dt", {}, "Menge gesamt"), h("dd", {}, fmtMenge(p.menge_kum, p.meins)),
+        h("dt", {}, "Menge je Baugruppe"), h("dd", {}, fmtMenge(p.menge, p.meins)),
+        h("dt", {}, "Menge gesamt"), h("dd", {}, fmtMenge(p.menge_kum, p.meins), h("small", { style: "color:var(--text-3);display:block" }, "bezogen auf 1 Stück des Materials")),
         h("dt", {}, "Stückliste"), h("dd", {}, p.stlnr),
         h("dt", {}, "Positionstyp"), h("dd", {}, p.postp || "–"))));
   box.replaceChildren(inhalt);
@@ -575,21 +611,51 @@ function frageZeile(f) {
   return h("div", { class: "frage" }, h("span", {}, f.text));
 }
 
-function ergaenzenFormular(p) {
-  const f = h("details", { style: "margin-top:10px" }, h("summary", {}, "Fehlendes Material unter dieser Position ergänzen"),
-    h("div", { style: "display:grid;grid-template-columns:1fr 90px;gap:6px;margin-top:6px" },
-      h("input", { type: "text", placeholder: "Materialnummer", "aria-label": "Materialnummer", disabled: !entwurfLeer() }),
-      h("input", { type: "number", placeholder: "Menge", min: "0", step: "any", "aria-label": "Menge", disabled: !entwurfLeer() })),
-    h("input", { type: "text", placeholder: "Kommentar", "aria-label": "Kommentar zum ergänzten Material", style: "width:100%;margin-top:6px", disabled: !entwurfLeer() }),
-    h("button", { type: "button", class: "knopf klein", style: "margin-top:6px", disabled: !entwurfLeer(), onclick: () => {
-      const [nr, menge, kommentar] = f.querySelectorAll("input");
-      if (!nr.value.trim()) { toast("Bitte eine Materialnummer eintragen.", true); return; }
-      S.lokalErgaenzt.push({ parent_pfad: p.id, parent_matnr: p.matnr, matnr: nr.value.trim(), menge: menge.value ? Number(menge.value) : null, kommentar: kommentar.value.trim() || null });
-      speichereLokal();
-      zeichneStueckliste();
-      toast("Ergänzt – noch nicht gespeichert.");
-    } }, "Ergänzen"));
-  return f;
+function ergaenzenDialog(parentId) {
+  const d = S.daten;
+  const baugruppen = [{ id: d.matnr, text: `${d.matnr} ${d.kurztext} (oberste Ebene)` },
+    ...d.positionen.filter((p) => p.hat_kinder).map((p) => ({ id: p.id, text: `${"  ".repeat(p.ebene)}${p.matnr} ${p.kurztext}` }))];
+  const unter = h("select", { "aria-label": "Unter welcher Baugruppe" }, ...baugruppen.map((b) => h("option", { value: b.id, selected: b.id === parentId }, b.text)));
+  const nr = h("input", { type: "text", placeholder: "z. B. 10000999", "aria-label": "Materialnummer", inputmode: "numeric" });
+  const info = h("div", { class: "feld-info" }, " ");
+  const menge = h("input", { type: "number", min: "0", step: "any", value: "1", "aria-label": "Menge" });
+  const kommentar = h("input", { type: "text", placeholder: "optional", "aria-label": "Kommentar" });
+  let geprueft = null;
+  nr.addEventListener("input", () => {
+    clearTimeout(ergaenzenDialog._t);
+    const wert = nr.value.trim();
+    geprueft = null;
+    info.textContent = wert ? "Prüfe …" : " ";
+    info.className = "feld-info";
+    if (!wert) return;
+    ergaenzenDialog._t = setTimeout(async () => {
+      try {
+        geprueft = await api("GET", `/api/materialinfo/${encodeURIComponent(wert)}`);
+        info.textContent = geprueft.bekannt ? `✓ ${geprueft.kurztext || "bekanntes Material"}` : "Unbekannte Materialnummer – bitte prüfen (kann trotzdem ergänzt werden).";
+        info.className = "feld-info " + (geprueft.bekannt ? "gut" : "warn");
+      } catch { info.textContent = " "; }
+    }, 250);
+  });
+  const ok = () => {
+    const wert = nr.value.trim().replace(/^0+/, "");
+    if (!wert) { info.textContent = "Bitte eine Materialnummer eintragen."; info.className = "feld-info warn"; nr.focus(); return; }
+    if (!(Number(menge.value) > 0)) { toast("Bitte eine Menge größer 0 eintragen.", true); menge.focus(); return; }
+    const parent = unter.value === d.matnr ? { matnr: d.matnr } : d.positionen.find((p) => p.id === unter.value);
+    S.lokalErgaenzt.push({ parent_pfad: unter.value, parent_matnr: parent.matnr, matnr: wert, kurztext: geprueft?.kurztext || "",
+      menge: Number(menge.value), kommentar: kommentar.value.trim() || null });
+    speichereLokal();
+    schliesseDialog();
+    zeichneStueckliste();
+    toast(`${wert} ergänzt – noch nicht gespeichert.`);
+  };
+  dialog("Fehlendes Material ergänzen", [
+    h("p", {}, "Für Materialien, die in die Basis-Stückliste gehören, aber im Baum ganz fehlen."),
+    h("label", {}, "Unter Baugruppe"), unter,
+    h("label", {}, "Materialnummer"), nr, info,
+    h("div", { style: "display:grid;grid-template-columns:120px 1fr;gap:10px" },
+      h("div", {}, h("label", {}, "Menge"), menge), h("div", {}, h("label", {}, "Kommentar"), kommentar))],
+  [h("button", { type: "button", class: "knopf", onclick: schliesseDialog }, "Abbrechen"), h("button", { type: "button", class: "knopf haupt", onclick: ok }, "Ergänzen")]);
+  setTimeout(() => nr.focus(), 0);
 }
 
 function materialUebersicht() {
@@ -621,6 +687,7 @@ function materialUebersicht() {
 async function ladeRegelAnsicht() {
   const d = await api("POST", `/api/regeln?q=${encodeURIComponent(S.regelnQ)}&nur_offen=${S.regelnNurOffen}`, { entwurf: entwurfPayload() });
   S.regelDaten = d;
+  $("#offen-zahl").textContent = d.offen || "";
   for (const m of d.merkmale) if (!S.merkmale[m.merkmal] || !S.daten?.merkmale?.some((x) => x.merkmal === m.merkmal)) S.merkmale[m.merkmal] = m;
   zeichneRegeln();
 }
@@ -636,10 +703,11 @@ function zeichneRegeln() {
         oninput: (ev) => { S.regelnQ = ev.target.value; clearTimeout(zeichneRegeln._t); zeichneRegeln._t = setTimeout(ladeRegelAnsicht, 200); } }),
       h("label", {}, h("input", { type: "checkbox", checked: S.regelnNurOffen, onchange: (ev) => { S.regelnNurOffen = ev.target.checked; ladeRegelAnsicht(); } }), " nur Merkmale mit offenen Werten"),
       S.daten?.merkmale ? h("label", {}, h("input", { type: "checkbox", checked: S.regelnNurMaterial, onchange: (ev) => { S.regelnNurMaterial = ev.target.checked; zeichneRegeln(); } }), ` nur Merkmale aus ${S.daten.matnr}`) : null,
-      h("span", { class: "unter", style: "margin-left:auto;color:var(--text-2)" }, `${merkmale.length} Merkmale`)),
-    d?.kuerzel?.length ? h("div", { style: "padding:10px 18px 0" }, h("div", { class: "gruppen-titel", style: "padding:0 0 6px" }, "Kürzel ohne Zuordnung"),
-      h("div", { style: "display:flex;gap:6px;flex-wrap:wrap" }, ...d.kuerzel.map((k) => h("span", { class: "chip" }, h("strong", {}, k.alias), k.merkmal ? `→ ${k.merkmal}` : " ohne Merkmal",
-        h("button", { type: "button", class: "knopf klein", style: "border:none", onclick: () => kuerzelDialog(k.alias) }, "Zuordnen"))))) : null,
+      h("span", { class: "unter", style: "margin-left:auto;color:var(--text-2)" }, `${merkmale.length} Merkmal${merkmale.length === 1 ? "" : "e"}`)),
+    d?.kuerzel?.length ? h("div", { style: "padding:10px 18px 0" }, h("div", { class: "gruppen-titel", style: "padding:0 0 6px" }, `Kürzel ohne Zuordnung (${d.kuerzel.length})`),
+      h("div", { style: "display:flex;gap:6px;flex-wrap:wrap" }, ...d.kuerzel.map((k) => h("span", { class: "chip gross" }, h("strong", {}, k.alias),
+        h("span", { style: "color:var(--text-2)" }, `in ${k.stuecklisten} Stückliste${k.stuecklisten === 1 ? "" : "n"}`),
+        h("button", { type: "button", class: "knopf klein", onclick: () => kuerzelDialog(k.alias) }, "Zuordnen"))))) : null,
     merkmale.length ? h("div", { class: "regel-liste" }, ...merkmale.map((m) => merkmalKarte(S.merkmale[m.merkmal] && entwurfLeer() ? m : m)))
       : h("div", { class: "leer-hinweis" }, S.regelnNurOffen ? "Keine Merkmale mit offenen Werten – Häkchen oben entfernen, um alle zu sehen." : "Keine Merkmale gefunden."));
 }
@@ -695,7 +763,15 @@ function brauchtName() {
 
 function nameDialog(danach) {
   const eingabe = h("input", { type: "text", value: S.name, placeholder: "Vorname Nachname", "aria-label": "Name" });
-  const speichern = () => { const n = eingabe.value.trim(); if (!n) { toast("Bitte einen Namen eingeben.", true); return; } S.name = n; speicher.schreib("bb.name", n); zeichneEntwurf(); schliesseDialog(); if (danach) danach(); };
+  const speichern = async () => {
+    const n = eingabe.value.trim();
+    if (!n) { toast("Bitte einen Namen eingeben.", true); return; }
+    const wechsel = n !== S.name;
+    S.name = n; speicher.schreib("bb.name", n); schliesseDialog();
+    if (wechsel) { await ladeServerEntwurf(); speichereLokal(); entwurfGeaendert(); }
+    zeichneEntwurf();
+    if (danach) danach();
+  };
   eingabe.addEventListener("keydown", (ev) => { if (ev.key === "Enter") speichern(); });
   dialog("Wie heißt du?", [h("p", {}, "Dein Name wird bei Regeländerungen und Bewertungen gespeichert, damit nachvollziehbar ist, wer was entschieden hat."), eingabe],
     [h("button", { type: "button", class: "knopf haupt", onclick: speichern }, "Weiter")]);
@@ -707,8 +783,7 @@ function kuerzelDialog(alias) {
   const eingabe = h("input", { type: "text", list: "merkmal-liste", placeholder: "Merkmalname laut SAP, z. B. SITZQUALI", "aria-label": "Merkmal" });
   dialog(`Kürzel „${alias}“ zuordnen`, [h("p", {}, "Zu welchem Merkmal gehört dieses Kürzel in den Bedingungsnamen?"), eingabe, liste,
     h("p", { class: "unter", style: "color:var(--text-2)" }, "Die Zuordnung landet im Entwurf – der Baum zeigt sofort, was sich ändert.")],
-  [h("button", { type: "button", class: "knopf leise", onclick: () => { setzeKuerzel(alias, null, "NICHT_BASIS"); schliesseDialog(); } }, "Kein Merkmal (ignorieren nicht möglich)"),
-    h("button", { type: "button", class: "knopf", onclick: schliesseDialog }, "Abbrechen"),
+  [h("button", { type: "button", class: "knopf", onclick: schliesseDialog }, "Abbrechen"),
     h("button", { type: "button", class: "knopf haupt", onclick: () => { const m = eingabe.value.trim().toUpperCase(); if (!m) { toast("Bitte ein Merkmal eintragen.", true); return; } setzeKuerzel(alias, m, "BASIS"); schliesseDialog(); } }, "Zuordnen")]);
 }
 
@@ -717,12 +792,13 @@ async function uebernehmenDialog() {
   const begr = h("textarea", { placeholder: "z. B. „Laut Produktmanagement ist FK die Standardausführung“", "aria-label": "Begründung" });
   const aenderungen = [...Object.values(S.entwurf.regeln), ...Object.values(S.entwurf.aliasse)];
   dialog("Regeländerungen übernehmen", [
-    h("p", {}, `${aenderungen.length} Änderung${aenderungen.length === 1 ? "" : "en"} gelten danach für alle Materialien und alle Kolleg:innen:`),
+    h("p", {}, aenderungen.length === 1 ? "Diese Änderung gilt danach für alle Materialien und alle Kolleg:innen:" : `Diese ${aenderungen.length} Änderungen gelten danach für alle Materialien und alle Kolleg:innen:`),
     h("ul", { class: "einfach" }, ...aenderungen.map((e) => h("li", {}, entwurfEintragText(e)))),
-    h("label", {}, "Begründung (für die Historie)"), begr,
+    h("label", {}, "Begründung (Pflicht, für die Historie)"), begr, h("div", { class: "feld-info", id: "begr-info" }, " "),
     h("p", { class: "unter", style: "color:var(--text-2)" }, `Gespeichert als: ${S.name}`)],
   [h("button", { type: "button", class: "knopf", onclick: schliesseDialog }, "Abbrechen"),
     h("button", { type: "button", class: "knopf haupt", onclick: async (ev) => {
+      if (begr.value.trim().length < 5) { const i = $("#begr-info"); i.textContent = "Bitte kurz begründen (mindestens 5 Zeichen) – andere sollen die Entscheidung nachvollziehen können."; i.className = "feld-info warn"; begr.focus(); return; }
       ev.target.disabled = true;
       try {
         await api("POST", "/api/uebernehmen", { entwurf: entwurfPayload(), von: S.name, begruendung: begr.value.trim() || null });
@@ -772,7 +848,8 @@ function hilfeDialog() {
       h("li", {}, "Material wählen, offene Fragen rechts klären – jede Regeländerung ist zunächst ein Entwurf nur für dich."),
       h("li", {}, "„Auswirkung auf alle Materialien“ zeigt, welche anderen Stücklisten sich mitändern."),
       h("li", {}, "„Übernehmen“ speichert die Regeln für alle (mit Name und Begründung)."),
-      h("li", {}, "Zeilen mit „✓ Stimmt“ bzw. „Raus“/„Rein“ bewerten, speichern, Material bestätigen."))],
+      h("li", {}, "Zeilen bewerten: „✓ Richtig“, wenn der Status passt; „Sollte raus“ bzw. „Sollte rein“, wenn er falsch ist. Speichern, dann das Material bestätigen."),
+      h("li", {}, "Dein Entwurf und deine ungespeicherten Bewertungen bleiben auch nach dem Neuladen erhalten."))],
   [h("button", { type: "button", class: "knopf haupt", onclick: schliesseDialog }, "Verstanden")]);
 }
 
@@ -818,8 +895,9 @@ async function start() {
   $("#uebernehmen-knopf").addEventListener("click", uebernehmenDialog);
   $("#auswirkung-knopf").addEventListener("click", () => { wechsleAnsicht("auswirkung"); });
   $("#dialog").addEventListener("click", (ev) => { if (ev.target.id === "dialog") schliesseDialog(); });
+  window.addEventListener("beforeunload", (ev) => { if (Object.keys(S.lokal).length || S.lokalErgaenzt.length || S.entfernt.length) { ev.preventDefault(); ev.returnValue = ""; } });
   try {
-    await Promise.all([ladeMeta(), ladeBasisRegeln(), ladeMaterialien()]);
+    await Promise.all([ladeMeta(), ladeBasisRegeln(), ladeMaterialien(), ladeServerEntwurf()]);
   } catch (e) { toast(`Server nicht erreichbar: ${e.message}`, true); return; }
   zeichneEntwurf();
   const ausHash = (location.hash.match(/#\/material\/(\w+)/) || [])[1];

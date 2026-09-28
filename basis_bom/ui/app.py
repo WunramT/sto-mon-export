@@ -35,6 +35,11 @@ class Bestaetigung(BaseModel):
     von: str
 
 
+class EntwurfDaten(BaseModel):
+    name: str
+    entwurf: dict
+
+
 def erstelle_app(eng: Engine) -> FastAPI:
     app = FastAPI(title="Basis-Stückliste", docs_url=None, redoc_url=None)
     dienst = Dienst(eng)
@@ -94,6 +99,19 @@ def erstelle_app(eng: Engine) -> FastAPI:
             return dienst.bestaetigen(matnr, body.von)
         except Eingabefehler as exc:
             return fehler(exc)
+
+    @app.get("/api/materialinfo/{matnr}")
+    def materialinfo(matnr: str):
+        return dienst.material_info(matnr)
+
+    @app.get("/api/entwurf")
+    def entwurf_laden(name: str):
+        return {"entwurf": dienst.entwurf_laden(name)}
+
+    @app.put("/api/entwurf")
+    def entwurf_speichern(body: EntwurfDaten):
+        dienst.entwurf_speichern(body.name, body.entwurf)
+        return {"ok": True}
 
     @app.post("/api/neu-laden")
     def neu_laden():

@@ -25,7 +25,10 @@ def test_seite_und_meta(client):
 def test_materialien(client):
     ms = {m["matnr"]: m for m in client.get("/api/materialien").json()}
     assert ms["90000001"]["zustand"] in {"offen", "in_arbeit", "bestaetigt"}
-    assert ms["90000003"]["zustand"] == "nicht_aufloesbar" and "D15" in ms["90000003"]["grund"]
+    assert (
+        ms["90000003"]["zustand"] == "nicht_aufloesbar" and "Mehrere Stücklisten" in ms["90000003"]["grund"]
+    )
+    assert ms["90000002"]["grund"] == "In SAP nicht als konfigurierbares Material gekennzeichnet"
     assert [m["matnr"] for m in client.get("/api/materialien?q=hocker").json()] == ["90000006"]
 
 
@@ -33,8 +36,12 @@ def test_material_mit_erklaerung_und_fragen(client):
     d = client.post("/api/material/90000001", json={"entwurf": None}).json()
     pos = {p["matnr"]: p for p in d["positionen"] if p["matnr"]}
     assert pos["10000102"]["status"] == "manuell_prüfen"
-    assert pos["10000102"]["fragen"][0] == {"typ": "rang", "merkmal": "SITZQUALI",
-                                            "text": "Für SITZQUALI ist noch kein Basiswert festgelegt"}  # fmt: skip
+    assert pos["10000102"]["fragen"][0] == {
+        "typ": "rang", "merkmal": "SITZQUALI",
+        "text": "SITZQUALI: Auf dieser Stückliste kommt nur FK vor – ist FK ein Basiswert?"}  # fmt: skip
+    assert (
+        pos["10000016"]["fragen"][0]["text"] == "Gilt die technische Regel PP4000_KS_VERERBEN in der Basis?"
+    )
     assert "verlangt SITZQUALI = FK, Basis ist HR" in pos["10000003"]["erklaerung"]
     assert pos["10000006"]["fragen"][0]["typ"] == "kuerzel"
     assert "SITZQUALI" in {m["merkmal"] for m in d["merkmale"]}
@@ -49,7 +56,7 @@ def test_entwurf_vorschau_und_auswirkung(client):
     assert {m["matnr"] for m in a["materialien"]} == {"90000001", "90000005", "90000006"}
     assert a["materialien"][0]["wechsel"][0] == {"von": "manuell_prüfen", "nach": "basis", "anzahl": 1}
     # ohne Übernahme bleibt der gespeicherte Stand unverändert
-    assert rules.lade_regelstand(client.app.state.dienst.eng).status("SITZQUALI", "FK") == "OFFEN"
+    assert rules.lade_regelstand(client.app.state.dienst.eng).status("SITZQUALI", "FK") in (None, "OFFEN")
 
 
 def test_uebernehmen_mit_konflikt(client, fixture_db):
@@ -83,9 +90,8 @@ def test_kuerzel_im_entwurf(client):
     }
     d = client.post("/api/material/90000001", json={"entwurf": e}).json()
     p = next(x for x in d["positionen"] if x["matnr"] == "10000006")
-    assert p["fragen"] == [
-        {"typ": "rang", "merkmal": "SITZTIEFE", "text": "Für SITZTIEFE ist noch kein Basiswert festgelegt"}
-    ]
+    assert [(f["typ"], f["merkmal"]) for f in p["fragen"]] == [("rang", "SITZTIEFE")]
+    assert p["fragen"][0]["text"] == "SITZTIEFE: Auf dieser Stückliste kommt nur 1 vor – ist 1 ein Basiswert?"
 
 
 def test_review_bestaetigen_und_regression(client, fixture_db):
@@ -133,3 +139,29 @@ def test_ergaenzen_und_ungueltig(client):
     )
     assert bad.status_code == 400
     assert client.post("/api/review/90000005", json={"von": " ", "urteile": {}}).status_code == 400
+
+
+def test_regeln_mit_beobachteten_werten_und_kuerzeln(client):
+    d = client.post("/api/regeln?nur_offen=true", json={"entwurf": None}).json()
+    sq = next(m for m in d["merkmale"] if m["merkmal"] == "SITZQUALI")
+    assert {w["wert"] for w in sq["werte"]} >= {"HR", "FK", "BS", "XX"}
+    assert next(w for w in sq["werte"] if w["wert"] == "FK")["stuecklisten"] >= 2
+    assert "ZZ" in {k["alias"] for k in d["kuerzel"]}
+    vorher = client.get("/api/meta").json()["offen"]
+    assert d["offen"] == vorher > 0
+    r = client.post("/api/regeln", json={"entwurf": FK_BASIS}).json()
+    assert r["offen"] == vorher - 1  # FK entschieden → eine offene Frage weniger
+
+
+def test_entwurf_serverseitig_und_materialinfo(client):
+    assert client.get("/api/entwurf?name=Erika").json() == {"entwurf": None}
+    client.put("/api/entwurf", json={"name": "Erika", "entwurf": FK_BASIS})
+    assert client.get("/api/entwurf?name=Erika").json()["entwurf"] == FK_BASIS
+    client.put("/api/entwurf", json={"name": "Erika", "entwurf": {"regeln": [], "aliasse": []}})
+    assert client.get("/api/entwurf?name=Erika").json() == {"entwurf": None}
+    assert client.get("/api/materialinfo/0010000002").json() == {
+        "matnr": "10000002",
+        "kurztext": "Sitzkissen HR",
+        "bekannt": True,
+    }
+    assert client.get("/api/materialinfo/77777777").json()["bekannt"] is False

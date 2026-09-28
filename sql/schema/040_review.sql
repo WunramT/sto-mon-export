@@ -25,3 +25,10 @@ CREATE TABLE IF NOT EXISTS basis_bom.bestaetigt (
 ALTER TABLE basis_bom.review ADD COLUMN IF NOT EXISTS status text;
 -- Web-Oberfläche: Urteil bezieht sich auf die Zeile (Pfad) eines Laufs; ergänzte Materialien („fehlt“) ohne Status.
 ALTER TABLE basis_bom.review ADD COLUMN IF NOT EXISTS pfad text;
+
+-- Web-Oberfläche: Regel-Entwurf pro Person (überlebt Neuladen und Browserwechsel; wirkt erst nach „Übernehmen“).
+CREATE TABLE IF NOT EXISTS basis_bom.entwurf (
+    name      text PRIMARY KEY,
+    daten     jsonb NOT NULL,
+    geaendert timestamptz NOT NULL DEFAULT now()
+);

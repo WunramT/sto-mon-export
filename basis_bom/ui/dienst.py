@@ -7,6 +7,7 @@ jeder Anfrage mitschickt; gespeichert wird erst bei „Übernehmen“ (historisi
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 from collections import Counter
@@ -45,33 +46,63 @@ def _wert_text(merkmal: str, wert: str) -> str:
     return f"{merkmal} ist gesetzt" if wert == rules.SYSTEMWERT else f"{merkmal} = {wert}"
 
 
+FEHLER_TEXT = {
+    "negation als Wort (NICHT/NOT) nicht auswertbar": "enthält eine Verneinung in Worten und kann nicht automatisch "
+                                                      "ausgewertet werden",
+    "leer": "ist leer",
+    "leerzeichen": "hat eine unbekannte Schreibweise",
+    "keine paare": "enthält keine erkennbaren Merkmale",
+}  # fmt: skip
+
+
+def _fehler_text(f: str) -> str:
+    if f in FEHLER_TEXT:
+        return FEHLER_TEXT[f]
+    if f.startswith("unverständlich"):
+        return "hat eine unbekannte Schreibweise"
+    return "kann nicht gelesen werden"
+
+
+def _liste(werte: list[str]) -> str:
+    return werte[0] if len(werte) == 1 else ", ".join(werte[:-1]) + " und " + werte[-1]
+
+
 def erklaere(
-    status: str, grund: str, bedingungen: list[dict], gewaehlt: dict, eigener: str | None
-) -> tuple[str, list[dict]]:
+    status: str, grund: str, bedingungen: list[dict], gewaehlt: dict, eigener: str | None,
+    kandidaten: dict | None = None,
+) -> tuple[str, list[dict]]:  # fmt: skip
     """Kurze Erklärung in Alltagssprache und die offenen Fragen, die der Fachbereich klären kann."""
+    kandidaten = kandidaten or {}
     fragen: list[dict] = []
     pruef = [p for b in bedingungen for p in b["pruefungen"]]
     for b in bedingungen:
         for k in b["unbekannte_kuerzel"] + b["offene_kuerzel"]:
-            fragen.append(
-                {"typ": "kuerzel", "alias": k, "text": f"Kürzel „{k}“ ist keinem Merkmal zugeordnet"}
-            )
+            fragen.append({"typ": "kuerzel", "alias": k,
+                           "text": f"Zu welchem Merkmal gehört das Kürzel „{k}“?"})  # fmt: skip
         if b["fehler"]:
             fragen.append(
-                {"typ": "unlesbar", "text": f"Bedingung „{b['name']}“ ist nicht auswertbar ({b['fehler']})"}
+                {"typ": "unlesbar", "text": f"Die Bedingung „{b['name']}“ {_fehler_text(b['fehler'])}"}
             )
         if b["rolle"] == "sonstige":
-            fragen.append(
-                {"typ": "unlesbar", "text": f"Bedingung „{b['name']}“ hat eine unbekannte Beziehungsart"}
-            )
+            fragen.append({"typ": "unlesbar", "text": f"Die Bedingung „{b['name']}“ hat eine unbekannte Art"})
     for p in pruef:
-        if p["ergebnis"] == "manuell":
-            if p["grund"].startswith("kein_rang_fuer:"):
-                fragen.append({"typ": "rang", "merkmal": p["merkmal"],
-                               "text": f"Für {p['merkmal']} ist noch kein Basiswert festgelegt"})  # fmt: skip
+        if p["ergebnis"] != "manuell":
+            continue
+        m = p["merkmal"]
+        werte = [k["wert"] for k in kandidaten.get(m, [])]
+        if p["wert"] == rules.SYSTEMWERT or werte == [rules.SYSTEMWERT]:
+            text = f"Gilt die technische Regel {m} in der Basis?"
+        elif p["grund"].startswith("kein_rang_fuer:"):
+            if len(werte) == 1:
+                text = f"{m}: Auf dieser Stückliste kommt nur {werte[0]} vor – ist {werte[0]} ein Basiswert?"
+            elif werte:
+                text = f"{m}: Welcher der Werte {_liste(werte)} ist Basis?"
             else:
-                fragen.append({"typ": "rang", "merkmal": p["merkmal"],
-                               "text": f"{p['merkmal']}: Wert in „{p['wert']}“ noch nicht entschieden"})  # fmt: skip
+                text = f"{m}: Welcher Wert ist Basis?"
+        else:
+            offen = p["grund"].split(":", 1)[-1].split(" in ")[0].split("=", 1)[-1]
+            text = f"{m}: Ist {offen.replace('/', ' bzw. ')} ein Basiswert? (steht in „{p['wert']}“)"
+        fragen.append({"typ": "rang", "merkmal": m, "text": text})
     eindeutig = {(f["typ"], f.get("merkmal") or f.get("alias") or f["text"]): f for f in fragen}
     fragen = list(eindeutig.values())
 
@@ -112,8 +143,25 @@ def erklaere(
     if grund.startswith("Positionstyp"):
         return f"Unbekannter Positionstyp – bitte manuell prüfen ({grund}).", fragen
     if fragen:
-        return "Noch nicht entscheidbar – " + "; ".join(f["text"] for f in fragen) + ".", fragen
+        return "Noch nicht entscheidbar – offene Frage" + (
+            "n" if len(fragen) > 1 else ""
+        ) + " siehe unten.", fragen
     return f"Bitte manuell prüfen ({grund}).", fragen
+
+
+def _grund_text(grund: str | None) -> str | None:
+    """Grund, warum ein Material nicht aufgelöst wird – in Fachsprache."""
+    if not grund:
+        return None
+    if "KZKFG" in grund:
+        return "In SAP nicht als konfigurierbares Material gekennzeichnet"
+    if grund.startswith("D15"):
+        return "Mehrere Stücklisten in Werk 4000 – bitte in SAP bereinigen"
+    if grund.startswith("keine Stückliste"):
+        return "Keine Stückliste in Werk 4000 (Verwendung 1)"
+    if grund == "keine MARA-Zeile":
+        return "Keine Stammdaten im Export"
+    return grund
 
 
 class Konflikt(Exception):
@@ -195,13 +243,41 @@ class Dienst:
         return self.src.lookup("MAKT", "MAKTX")
 
     # ---------------------------------------------------------------------------------------------------------
+    def _vorkommen(self, a: Aufloeser) -> tuple[Counter, Counter]:
+        """(Merkmal, Wert) → Anzahl Stücklisten, Kürzel ohne Merkmal → Anzahl Stücklisten (alle Stücklisten)."""
+        if getattr(a, "_ui_vorkommen", None) is None:
+            werte: Counter = Counter()
+            kuerzel: Counter = Counter()
+            for _stlnr, pos in self.src.positionen.items():
+                w_hier, k_hier = set(), set()
+                for knobj in set(pos["KNOBJ"]) - {"", "0"}:
+                    for knnum in self.src.knnum_pro_knobj.get(knobj, []):
+                        bez = self.src.beziehungen.get(knnum)
+                        if not bez:
+                            continue
+                        e = a.parser.parse(bez["knnam"])
+                        for m, w in e.paare:
+                            w_hier |= {(m, t) for t in einzelwerte(negiert(w)[1])}
+                        k_hier |= set(e.unbekannte_aliasse) | set(e.offene_aliasse)
+                werte.update(w_hier)
+                kuerzel.update(k_hier)
+            a._ui_vorkommen = (werte, kuerzel)
+        return a._ui_vorkommen
+
+    def offene_fragen(self, a: Aufloeser | None = None) -> int:
+        a = a or self.aufloeser()
+        werte, kuerzel = self._vorkommen(a)
+        offen_werte = sum(1 for (m, w) in werte if m != rules.SITZHOEHE
+                          and (a.regeln.status(m, w) in (None, rules.OFFEN)))  # fmt: skip
+        return offen_werte + len(kuerzel)
+
     def meta(self) -> dict:
         s = self.src
         rs = self.regelstand()
         return {
             "stichtag": str(s.stichtag), "marker": sorted(s.marker), "warnungen": s.warnungen,
             "regel_version": str(rs.version) if rs.version else None,
-            "regeln": len(rs.regeln), "offen": sum(r.status == rules.OFFEN for r in rs.regeln.values()),
+            "regeln": len(rs.regeln), "offen": self.offene_fragen(),
         }  # fmt: skip
 
     def _roots(self) -> tuple[list[str], set[str]]:
@@ -224,7 +300,7 @@ class Dienst:
             text = kt.get(m, "")
             if q and q not in m and q not in text.upper():
                 continue
-            grund = "Ausschluss (root_ausschluss)" if m in aus else a.root_pruefung(m)
+            grund = "Vom Fachbereich ausgeschlossen" if m in aus else _grund_text(a.root_pruefung(m))
             if m in best:
                 zustand = "bestaetigt"
             elif grund:
@@ -267,8 +343,9 @@ class Dienst:
                     "pruefungen": [{"merkmal": p["merkmal"], "wert": p["wert"], "ergebnis": p["ergebnis"],
                                     "grund": p["grund"]} for p in b.get("pruefungen", [])],
                 })  # fmt: skip
+            ebene = a._ebenen.get((z["stlnr"], sp.get("stlal", "1")))
             erkl, fragen = erklaere(z["status"], z["grund"] or "", bed, sp.get("gewaehlt", {}),
-                                    sp.get("eigener_status"))  # fmt: skip
+                                    sp.get("eigener_status"), ebene.wahl.kandidaten if ebene else None)  # fmt: skip
             v = vorher.get(z["pfad"])
             positionen.append({
                 "id": z["pfad"], "parent": z["pfad"].rsplit("/", 1)[0], "ebene": z["ebene"], "posnr": z["posnr"],
@@ -331,21 +408,54 @@ class Dienst:
 
     # ---------------------------------------------------------------------------------------------------------
     def regeln(self, q: str = "", nur_offen: bool = False, entwurf: Entwurf | None = None) -> dict:
-        rs = ueberlagere(self.regelstand(), entwurf or Entwurf())
+        a = self.aufloeser(entwurf)
+        rs = a.regeln  # enthält die in Stücklisten beobachteten, noch nicht entschiedenen Werte als OFFEN
+        werte_vk, kuerzel_vk = self._vorkommen(a)
         q = (q or "").strip().upper()
         merkmale = sorted({m for m, _ in rs.regeln})
-        eintraege = [self._merkmal_eintrag(m, rs) for m in merkmale if not q or q in m]
+        eintraege = []
+        for m in merkmale:
+            if q and q not in m:
+                continue
+            e = self._merkmal_eintrag(m, rs)
+            for w in e["werte"]:
+                w["stuecklisten"] = werte_vk.get((m, w["wert"]), 0)
+            e["offen"] = sum(1 for w in e["werte"] if w["status"] == rules.OFFEN and w["stuecklisten"])
+            eintraege.append(e)
         if nur_offen:
-            eintraege = [e for e in eintraege if any(w["status"] == rules.OFFEN for w in e["werte"])]
-        aliasse = sorted(
-            (
-                {"alias": a.alias, "merkmal": a.merkmal, "status": a.status}
-                for a in rs.aliasse.values()
-                if a.status != rules.BASIS or not a.merkmal
-            ),  # fmt: skip
-            key=lambda x: x["alias"],
-        )
-        return {"merkmale": eintraege, "kuerzel": aliasse, "version": str(rs.version)}
+            eintraege = [e for e in eintraege if e["offen"] and not e["sitzhoehe"]]
+        eintraege.sort(key=lambda e: (-e["offen"], e["merkmal"]))
+        kuerzel = [{"alias": k, "merkmal": None, "status": rules.OFFEN, "stuecklisten": n}
+                   for k, n in sorted(kuerzel_vk.items(), key=lambda x: (-x[1], x[0]))]  # fmt: skip
+        return {"merkmale": eintraege, "kuerzel": kuerzel, "version": str(rs.version),
+                "offen": self.offene_fragen(a)}  # fmt: skip
+
+    def material_info(self, matnr: str) -> dict:
+        m = matnr.strip().lstrip("0")
+        s = self.src
+        bekannt = (m in self.kurztext() or m in s.lookup("MARA", "MATKL") or m in s.stlnr_pro_material
+                   or m in set(s.stpo["IDNRK"]))  # fmt: skip
+        return {"matnr": m, "kurztext": self.kurztext().get(m, ""), "bekannt": bool(bekannt)}
+
+    def entwurf_laden(self, name: str) -> dict | None:
+        with self.eng.connect() as con:
+            r = con.execute(
+                sa.text("SELECT daten FROM basis_bom.entwurf WHERE name = :n"), {"n": name}
+            ).scalar()
+        return r
+
+    def entwurf_speichern(self, name: str, daten: dict) -> None:
+        if not name.strip():
+            return
+        leer = not (daten.get("regeln") or daten.get("aliasse"))
+        with self.eng.begin() as con:
+            if leer:
+                con.execute(sa.text("DELETE FROM basis_bom.entwurf WHERE name = :n"), {"n": name})
+            else:
+                con.execute(sa.text(
+                    "INSERT INTO basis_bom.entwurf (name, daten) VALUES (:n, CAST(:d AS jsonb)) "
+                    "ON CONFLICT (name) DO UPDATE SET daten = EXCLUDED.daten, geaendert = now()"),
+                    {"n": name, "d": json.dumps(daten)})  # fmt: skip
 
     # ---------------------------------------------------------------------------------------------------------
     def _stlnr_merkmale(self, a: Aufloeser) -> dict[str, set[str]]:

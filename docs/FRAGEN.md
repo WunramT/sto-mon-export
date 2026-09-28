@@ -224,6 +224,15 @@ Regelinhalte entscheidet der Fachbereich; die Anwendung stellt nur die Mechanik.
   Merkmale bleibt D4 (nur NICHT_BASIS/OFFEN → `kein_rang_fuer`, manuell).
 - **Q47 → umgesetzt:** `M<>W` / `M!=W` wird als „Merkmal ≠ Wert“ ausgewertet (passt, wenn auf der Ebene ein anderer
   Wert gewählt ist). Wortformen `NICHT`/`NOT` bleiben nicht parsbar.
-- **Regel-Arbeitsliste:** `basis-bom regel export` / `regel import` – XLSX mit allen Regeln und nicht zugeordneten
-  Kürzeln samt Vorkommen im letzten Lauf; Import prüft Status, Pflicht-Rang und Rang-Eindeutigkeit vorab und
-  schreibt alles historisiert in einer Transaktion (Rangtausch möglich).
+- **Web-Oberfläche statt XLSX:** `basis-bom ui` ersetzt Regel-Arbeitsliste und Review-Blätter (nur der
+  SAP-Format-Export bleibt). Regeländerungen sind ein Entwurf je Name (serverseitig gespeichert), die Vorschau rechnet
+  der Server mit demselben Code wie der Lauf. „Übernehmen“ braucht eine Begründung, schreibt historisiert in einer
+  Transaktion und meldet einen Konflikt, wenn dieselbe Regel inzwischen geändert wurde.
+- **Offene Regelfragen:** eine Frage je Merkmal (unentschiedene beobachtete Werte oder Stücklisten ohne Basiswert)
+  und je Kürzel ohne Merkmal; Prozeduren zählen nicht. Nicht lesbare Bedingungen (z. B. `NICHT SQ=HR`) sind ein
+  Hinweis, keine Regelfrage – sie lassen sich nur in SAP lösen. **Q48** Passt diese Zählweise für den Fachbereich?
+- **Anzeigenamen:** Tabelle `basis_bom.merkmal_text`, Startwerte aus den SAP-Namen abgeleitet (Annahme), in der
+  Oberfläche änderbar. **Q49** Gibt es eine offizielle Bezeichnungsliste (z. B. CABNT-Export), die wir laden sollen?
+- **Bewertung:** Momentaufnahme je Speichern (Lauf + Pfad je Zeile); bestätigen nur, wenn alle Zeilen „richtig“
+  sind und sich kein Status seitdem geändert hat. Ergänzte Materialien (mit Menge und Einheit) verhindern die
+  Bestätigung, bis sie wieder entfernt oder die Regeln angepasst sind.

@@ -10,3 +10,18 @@ MATNR,SPRAS,MAKTX
 10000020,D,Schraube M6
 10000101,D,Beschlag manuell
 10000111,D,Mutter M6
+90000005,D,Sessel STO Komfort
+90000006,D,Hocker STO Mini
+10000003,D,Sitzkissen FK
+10000004,D,Funktionsteil manuell
+10000006,D,Rückenmodul
+10000010,D,Sitzbezug manuell
+10000013,D,Gasfeder 48
+10000014,D,Klips CNC
+10000015,D,Sitzkissen HR/XX
+10000016,D,Vererbungsteil
+10000102,D,Beschlag FK
+10000201,D,Rückenpolster
+10000202,D,Rückenbezug HR
+10000203,D,Rückenbezug BS
+10000301,D,Unterbau FK

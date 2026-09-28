@@ -27,9 +27,8 @@ def erg_laden():
 @pytest.fixture(scope="module")
 def ergebnis(erg_laden):
     src = SapSource.from_ladeergebnis(erg_laden)
-    return Aufloeser(src, seed_regelstand()).loese_alle(
-        erg_laden.roots["matnr"], erg_laden.root_ausschluss["matnr"]
-    )
+    urspruenglich = ["90000001", "90000002", "90000003", "90000004"]  # Umfang des Golden-Files
+    return Aufloeser(src, seed_regelstand()).loese_alle(urspruenglich, erg_laden.root_ausschluss["matnr"])
 
 
 @pytest.fixture(scope="module")

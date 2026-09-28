@@ -30,7 +30,7 @@ from ..explode import (
 )
 from ..ranking import einzelwerte, negiert
 from ..rules import Alias, Regel, Regelstand
-from ..source import SapSource
+from ..source import KNART_AUSWAHL, SapSource
 
 log = logging.getLogger(__name__)
 
@@ -69,45 +69,49 @@ def _liste(werte: list[str]) -> str:
 
 def erklaere(
     status: str, grund: str, bedingungen: list[dict], gewaehlt: dict, eigener: str | None,
-    kandidaten: dict | None = None,
+    kandidaten: dict | None = None, namen: dict[str, str] | None = None,
 ) -> tuple[str, list[dict]]:  # fmt: skip
     """Kurze Erklärung in Alltagssprache und die offenen Fragen, die der Fachbereich klären kann."""
     kandidaten = kandidaten or {}
+    namen = namen or {}
     fragen: list[dict] = []
     pruef = [p for b in bedingungen for p in b["pruefungen"]]
     for b in bedingungen:
         for k in b["unbekannte_kuerzel"] + b["offene_kuerzel"]:
-            fragen.append({"typ": "kuerzel", "alias": k,
+            fragen.append({"typ": "kuerzel", "alias": k, "schluessel": f"kuerzel:{k}",
                            "text": f"Zu welchem Merkmal gehört das Kürzel „{k}“?"})  # fmt: skip
         if b["fehler"]:
-            fragen.append(
-                {"typ": "unlesbar", "text": f"Die Bedingung „{b['name']}“ {_fehler_text(b['fehler'])}"}
-            )
+            fragen.append({"typ": "unlesbar", "schluessel": f"unlesbar:{b['name']}",
+                           "text": f"Die Bedingung „{b['name']}“ {_fehler_text(b['fehler'])}"})  # fmt: skip
         if b["rolle"] == "sonstige":
-            fragen.append({"typ": "unlesbar", "text": f"Die Bedingung „{b['name']}“ hat eine unbekannte Art"})
+            fragen.append({"typ": "unlesbar", "schluessel": f"unlesbar:{b['name']}",
+                           "text": f"Die Bedingung „{b['name']}“ hat eine unbekannte Art"})  # fmt: skip
     for p in pruef:
         if p["ergebnis"] != "manuell":
             continue
         m = p["merkmal"]
+        n = namen.get(m, m)
         werte = [k["wert"] for k in kandidaten.get(m, [])]
+        typ = "rang"
         if p["wert"] == rules.SYSTEMWERT or werte == [rules.SYSTEMWERT]:
-            text = f"Gilt die technische Regel {m} in der Basis?"
+            text, typ = f"Gilt die technische Regel „{n}“ in der Basis?", "systemregel"
         elif p["grund"].startswith("kein_rang_fuer:"):
             if len(werte) == 1:
-                text = f"{m}: Auf dieser Stückliste kommt nur {werte[0]} vor – ist {werte[0]} ein Basiswert?"
+                text = f"{n}: Auf dieser Stückliste kommt nur {werte[0]} vor – ist {werte[0]} ein Basiswert?"
             elif werte:
-                text = f"{m}: Welcher der Werte {_liste(werte)} ist Basis?"
+                text = f"{n}: Welcher der Werte {_liste(werte)} ist Basis?"
             else:
-                text = f"{m}: Welcher Wert ist Basis?"
+                text = f"{n}: Welcher Wert ist Basis?"
         else:
             offen = p["grund"].split(":", 1)[-1].split(" in ")[0].split("=", 1)[-1]
-            text = f"{m}: Ist {offen.replace('/', ' bzw. ')} ein Basiswert? (steht in „{p['wert']}“)"
-        fragen.append({"typ": "rang", "merkmal": m, "text": text})
-    eindeutig = {(f["typ"], f.get("merkmal") or f.get("alias") or f["text"]): f for f in fragen}
+            text = f"{n}: Ist {offen.replace('/', ' bzw. ')} ein Basiswert? (steht in „{p['wert']}“)"
+        fragen.append({"typ": typ, "merkmal": m, "schluessel": f"merkmal:{m}", "text": text})
+    eindeutig = {f["schluessel"]: f for f in fragen}
     fragen = list(eindeutig.values())
 
     if status == BASIS:
-        teile = [_wert_text(p["merkmal"], p["wert"].lstrip("≠")) + (" (≠)" if p["wert"].startswith("≠") else "")
+        teile = [f"{namen.get(p['merkmal'], p['merkmal'])} ist nicht {p['wert'][1:]}" if p["wert"].startswith("≠")
+                 else _wert_text(namen.get(p["merkmal"], p["merkmal"]), p["wert"])
                  for p in pruef if p["ergebnis"] == "passt"]  # fmt: skip
         return "Gehört zur Basis – Bedingung erfüllt: " + ", ".join(teile) + ".", fragen
     if status == UNBEDINGT:
@@ -117,12 +121,13 @@ def erklaere(
         teile = []
         for p in nicht:
             g = gewaehlt.get(p["merkmal"])
+            n = namen.get(p["merkmal"], p["merkmal"])
             if g is None and p["merkmal"] in gewaehlt:
-                teile.append(f"{p['merkmal']} gehört laut Regel nie zur Basis")
+                teile.append(f"die technische Regel „{n}“ gilt in der Basis nicht")
             elif p["wert"].startswith("≠"):
-                teile.append(f"verlangt {p['merkmal']} ≠ {p['wert'][1:]}, Basis ist aber {g}")
+                teile.append(f"verlangt {n} nicht {p['wert'][1:]}, Basis ist aber {g}")
             else:
-                teile.append(f"verlangt {p['merkmal']} = {p['wert']}, Basis ist {g}")
+                teile.append(f"verlangt {n} = {p['wert']}, Basis ist {g}")
         return "Nicht in der Basis – " + "; ".join(teile) + ".", fragen
     if status == AUSGESCHLOSSEN_VERERBT:
         return "Nicht in der Basis, weil die übergeordnete Baugruppe ausgeschlossen ist.", fragen
@@ -243,33 +248,112 @@ class Dienst:
         return self.src.lookup("MAKT", "MAKTX")
 
     # ---------------------------------------------------------------------------------------------------------
-    def _vorkommen(self, a: Aufloeser) -> tuple[Counter, Counter]:
-        """(Merkmal, Wert) → Anzahl Stücklisten, Kürzel ohne Merkmal → Anzahl Stücklisten (alle Stücklisten)."""
+    def _vk(self, a: Aufloeser) -> dict:
+        """Was in allen Stücklisten vorkommt: Werte, Kürzel ohne Merkmal, nicht lesbare Bedingungen (je Anzahl
+        Stücklisten) und je Stückliste die Werte pro Merkmal."""
         if getattr(a, "_ui_vorkommen", None) is None:
             werte: Counter = Counter()
             kuerzel: Counter = Counter()
-            for _stlnr, pos in self.src.positionen.items():
-                w_hier, k_hier = set(), set()
+            unlesbar: Counter = Counter()
+            fehler: dict[str, str] = {}
+            pro_stl: dict[str, dict[str, set[str]]] = {}
+            for stlnr, pos in self.src.positionen.items():
+                w_hier, k_hier, u_hier = set(), set(), set()
                 for knobj in set(pos["KNOBJ"]) - {"", "0"}:
                     for knnum in self.src.knnum_pro_knobj.get(knobj, []):
                         bez = self.src.beziehungen.get(knnum)
-                        if not bez:
-                            continue
+                        if not bez or not (a.knart_fehlt or bez["knart"] in KNART_AUSWAHL):
+                            continue  # Prozeduren wirken nicht auf die Auswahl (werden ignoriert)
                         e = a.parser.parse(bez["knnam"])
+                        if e.fehler:
+                            u_hier.add(bez["knnam"])
+                            fehler[bez["knnam"]] = e.fehler
                         for m, w in e.paare:
                             w_hier |= {(m, t) for t in einzelwerte(negiert(w)[1])}
                         k_hier |= set(e.unbekannte_aliasse) | set(e.offene_aliasse)
                 werte.update(w_hier)
                 kuerzel.update(k_hier)
-            a._ui_vorkommen = (werte, kuerzel)
+                unlesbar.update(u_hier)
+                if w_hier:
+                    d: dict[str, set[str]] = {}
+                    for m, w in w_hier:
+                        d.setdefault(m, set()).add(w)
+                    pro_stl[stlnr] = d
+            a._ui_vorkommen = {"werte": werte, "kuerzel": kuerzel, "unlesbar": unlesbar, "fehler": fehler,
+                               "pro_stl": pro_stl}  # fmt: skip
         return a._ui_vorkommen
 
-    def offene_fragen(self, a: Aufloeser | None = None) -> int:
+    def _vorkommen(self, a: Aufloeser) -> tuple[Counter, Counter]:
+        vk = self._vk(a)
+        return vk["werte"], vk["kuerzel"]
+
+    def merkmal_namen(self) -> dict[str, str]:
+        with self.eng.connect() as con:
+            return dict(con.execute(sa.text("SELECT merkmal, text FROM basis_bom.merkmal_text")).all())
+
+    def merkmal_name_setzen(self, merkmal: str, text: str) -> None:
+        merkmal, text = merkmal.strip().upper(), text.strip()
+        if not merkmal:
+            raise Eingabefehler("Merkmal fehlt")
+        with self.eng.begin() as con:
+            if text:
+                con.execute(sa.text("INSERT INTO basis_bom.merkmal_text (merkmal, text) VALUES (:m, :t) "
+                                    "ON CONFLICT (merkmal) DO UPDATE SET text = EXCLUDED.text"), {"m": merkmal, "t": text})  # fmt: skip
+            else:
+                con.execute(sa.text("DELETE FROM basis_bom.merkmal_text WHERE merkmal = :m"), {"m": merkmal})
+
+    def fragen(self, a: Aufloeser | None = None) -> dict:
+        """Die eine Liste offener Regelfragen (überall dieselbe Zählung) plus Hinweise, die nur in SAP lösbar sind.
+
+        Je Merkmal eine Frage: beobachtete Werte ohne Entscheidung (OFFEN/unbekannt) oder Stücklisten, auf denen
+        keiner der vorkommenden Werte Basis ist. Je Kürzel ohne Merkmal eine Frage.
+        """
         a = a or self.aufloeser()
-        werte, kuerzel = self._vorkommen(a)
-        offen_werte = sum(1 for (m, w) in werte if m != rules.SITZHOEHE
-                          and (a.regeln.status(m, w) in (None, rules.OFFEN)))  # fmt: skip
-        return offen_werte + len(kuerzel)
+        if getattr(a, "_ui_fragen", None) is not None:
+            return a._ui_fragen
+        vk, rs, namen = self._vk(a), a.regeln, self.merkmal_namen()
+        offen: dict[str, set[str]] = {}
+        stl_offen: dict[str, set[str]] = {}
+        ohne_basis: dict[str, set[str]] = {}
+        for stlnr, d in vk["pro_stl"].items():
+            for m, ws in d.items():
+                if m == rules.SITZHOEHE:
+                    continue
+                st = {w: rs.status(m, w) for w in ws}
+                o = {w for w, x in st.items() if x in (None, rules.OFFEN)}
+                if o:
+                    offen.setdefault(m, set()).update(o)
+                    stl_offen.setdefault(m, set()).add(stlnr)
+                elif rules.BASIS not in st.values() and ws != {rules.SYSTEMWERT}:
+                    ohne_basis.setdefault(m, set()).add(stlnr)
+        liste = []
+        for m in sorted(set(offen) | set(ohne_basis)):
+            name = namen.get(m, m)
+            werte = sorted(offen.get(m, set()))
+            stl = stl_offen.get(m, set()) | ohne_basis.get(m, set())
+            if werte == [rules.SYSTEMWERT]:
+                typ, text = "systemregel", f"Gilt die technische Regel „{name}“ in der Basis?"
+            elif len(werte) == 1:
+                typ, text = "merkmal", f"{name}: Ist {werte[0]} ein Basiswert?"
+            elif werte:
+                typ, text = "merkmal", f"{name}: Welche der Werte {_liste(werte)} sind Basiswerte?"
+            else:
+                typ, text = "merkmal", f"{name}: Auf manchen Stücklisten ist keiner der Werte Basis – welcher soll gelten?"
+            liste.append({"schluessel": f"merkmal:{m}", "typ": typ, "merkmal": m, "name": name, "werte": werte,
+                          "text": text, "stuecklisten": len(stl)})  # fmt: skip
+        for k, n in sorted(vk["kuerzel"].items(), key=lambda x: (-x[1], x[0])):
+            liste.append({"schluessel": f"kuerzel:{k}", "typ": "kuerzel", "alias": k,
+                          "text": f"Zu welchem Merkmal gehört das Kürzel „{k}“?", "stuecklisten": n})  # fmt: skip
+        liste.sort(key=lambda f: -f["stuecklisten"])
+        hinweise = [{"schluessel": f"unlesbar:{b}", "typ": "unlesbar", "bedingung": b,
+                     "text": f"Die Bedingung „{b}“ {_fehler_text(vk['fehler'][b])} – bitte in SAP umformulieren "
+                             "oder die betroffenen Positionen manuell bewerten.", "stuecklisten": n}
+                    for b, n in sorted(vk["unlesbar"].items(), key=lambda x: (-x[1], x[0]))]  # fmt: skip
+        a._ui_fragen = {"fragen": liste, "hinweise": hinweise}
+        return a._ui_fragen
+
+    def offene_fragen(self, a: Aufloeser | None = None) -> int:
+        return len(self.fragen(a)["fragen"])
 
     def meta(self) -> dict:
         s = self.src
@@ -277,7 +361,7 @@ class Dienst:
         return {
             "stichtag": str(s.stichtag), "marker": sorted(s.marker), "warnungen": s.warnungen,
             "regel_version": str(rs.version) if rs.version else None,
-            "regeln": len(rs.regeln), "offen": self.offene_fragen(),
+            "regeln": len(rs.regeln), "offen": self.offene_fragen(), "namen": self.merkmal_namen(),
         }  # fmt: skip
 
     def _roots(self) -> tuple[list[str], set[str]]:
@@ -330,6 +414,7 @@ class Dienst:
             basis_zeilen, _ = self._loese(self.aufloeser(), matnr)
             vorher = {z["pfad"]: z["status"] for z in basis_zeilen}
         kt = self.kurztext()
+        namen = self.merkmal_namen()
         review = self.review(matnr, {z["pfad"]: z for z in zeilen} if entwurf.leer() else None)
         positionen = []
         for z in zeilen:
@@ -345,7 +430,8 @@ class Dienst:
                 })  # fmt: skip
             ebene = a._ebenen.get((z["stlnr"], sp.get("stlal", "1")))
             erkl, fragen = erklaere(z["status"], z["grund"] or "", bed, sp.get("gewaehlt", {}),
-                                    sp.get("eigener_status"), ebene.wahl.kandidaten if ebene else None)  # fmt: skip
+                                    sp.get("eigener_status"), ebene.wahl.kandidaten if ebene else None,
+                                    namen)  # fmt: skip
             v = vorher.get(z["pfad"])
             positionen.append({
                 "id": z["pfad"], "parent": z["pfad"].rsplit("/", 1)[0], "ebene": z["ebene"], "posnr": z["posnr"],
@@ -370,17 +456,29 @@ class Dienst:
                 ebenen[stlnr] = {"bmeng": e.bmeng, "bmeng_angenommen": e.bmeng_angenommen,
                                  "gewaehlt": e.wahl.gewaehlt, "kandidaten": e.wahl.kandidaten,
                                  "marker": e.wahl.marker}  # fmt: skip
+        global_ = self.fragen(a)
+        nach_schluessel = {f["schluessel"]: f for f in global_["fragen"] + global_["hinweise"]}
+        im_material: dict[str, dict] = {}
+        for p in positionen:
+            for f in p["fragen"]:
+                g = nach_schluessel.get(f["schluessel"], f)
+                e = im_material.setdefault(f["schluessel"], {**g, "positionen": 0, "beispiel": p["id"]})
+                e["positionen"] += 1
+        mat_fragen = [f for f in im_material.values() if f["typ"] != "unlesbar"]
+        mat_hinweise = [f for f in im_material.values() if f["typ"] == "unlesbar"]
         return {
             "matnr": matnr, "kurztext": kt.get(matnr, ""), "warnungen": warnungen,
+            "fragen": sorted(mat_fragen, key=lambda f: -f["positionen"]),
+            "hinweise": sorted(mat_hinweise, key=lambda f: -f["positionen"]),
             "zaehler": dict(Counter(p["status"] for p in positionen)),
             "geaendert": sum(1 for p in positionen if p["vorher"]),
             "positionen": positionen, "ebenen": ebenen,
-            "merkmale": self._merkmale_im_material(zeilen, a.regeln),
+            "merkmale": self._merkmale_im_material(zeilen, a.regeln, namen),
             "review": review, "ids": len(ids),
         }  # fmt: skip
 
     @staticmethod
-    def _merkmale_im_material(zeilen: list[dict], rs: Regelstand) -> list[dict]:
+    def _merkmale_im_material(zeilen: list[dict], rs: Regelstand, namen: dict[str, str]) -> list[dict]:
         vorkommen: Counter = Counter()
         for z in zeilen:
             for b in z["spur"].get("beziehungen", []):
@@ -388,10 +486,11 @@ class Dienst:
                     for t in einzelwerte(negiert(w)[1]):
                         vorkommen[(m, t)] += 1
         merkmale = sorted({m for m, _ in vorkommen})
-        return [Dienst._merkmal_eintrag(m, rs, vorkommen) for m in merkmale]
+        return [Dienst._merkmal_eintrag(m, rs, vorkommen, namen) for m in merkmale]
 
     @staticmethod
-    def _merkmal_eintrag(m: str, rs: Regelstand, vorkommen: Counter | None = None) -> dict:
+    def _merkmal_eintrag(m: str, rs: Regelstand, vorkommen: Counter | None = None,
+                         namen: dict[str, str] | None = None) -> dict:  # fmt: skip
         werte = {w for (mm, w) in rs.regeln if mm == m}
         if vorkommen:
             werte |= {w for (mm, w) in vorkommen if mm == m}
@@ -403,7 +502,7 @@ class Dienst:
         eintraege.sort(
             key=lambda e: ({"BASIS": 0, "OFFEN": 1, "NICHT_BASIS": 2}[e["status"]], e["rang"] or 0, e["wert"])
         )
-        return {"merkmal": m, "systemregel": [e["wert"] for e in eintraege] == [rules.SYSTEMWERT],
+        return {"merkmal": m, "name": (namen or {}).get(m, m), "systemregel": [e["wert"] for e in eintraege] == [rules.SYSTEMWERT],
                 "sitzhoehe": m == rules.SITZHOEHE, "werte": eintraege}  # fmt: skip
 
     # ---------------------------------------------------------------------------------------------------------
@@ -411,24 +510,28 @@ class Dienst:
         a = self.aufloeser(entwurf)
         rs = a.regeln  # enthält die in Stücklisten beobachteten, noch nicht entschiedenen Werte als OFFEN
         werte_vk, kuerzel_vk = self._vorkommen(a)
+        fr = self.fragen(a)
+        frage_zu = {f["merkmal"]: f for f in fr["fragen"] if f.get("merkmal")}
+        namen = self.merkmal_namen()
         q = (q or "").strip().upper()
         merkmale = sorted({m for m, _ in rs.regeln})
         eintraege = []
         for m in merkmale:
-            if q and q not in m:
+            if q and q not in m and q not in namen.get(m, "").upper():
                 continue
-            e = self._merkmal_eintrag(m, rs)
+            e = self._merkmal_eintrag(m, rs, None, namen)
             for w in e["werte"]:
                 w["stuecklisten"] = werte_vk.get((m, w["wert"]), 0)
-            e["offen"] = sum(1 for w in e["werte"] if w["status"] == rules.OFFEN and w["stuecklisten"])
+            e["frage"] = frage_zu.get(m)
+            e["offen"] = 1 if e["frage"] else 0
             eintraege.append(e)
         if nur_offen:
-            eintraege = [e for e in eintraege if e["offen"] and not e["sitzhoehe"]]
-        eintraege.sort(key=lambda e: (-e["offen"], e["merkmal"]))
+            eintraege = [e for e in eintraege if e["frage"]]
+        eintraege.sort(key=lambda e: (-e["offen"], e["name"].upper()))
         kuerzel = [{"alias": k, "merkmal": None, "status": rules.OFFEN, "stuecklisten": n}
                    for k, n in sorted(kuerzel_vk.items(), key=lambda x: (-x[1], x[0]))]  # fmt: skip
         return {"merkmale": eintraege, "kuerzel": kuerzel, "version": str(rs.version),
-                "offen": self.offene_fragen(a)}  # fmt: skip
+                "offen": len(fr["fragen"]), "fragen": fr["fragen"], "hinweise": fr["hinweise"]}  # fmt: skip
 
     def material_info(self, matnr: str) -> dict:
         m = matnr.strip().lstrip("0")
@@ -582,7 +685,7 @@ class Dienst:
     def _letzter_review(self, matnr: str) -> list[dict]:
         with self.eng.connect() as con:
             return [dict(r) for r in con.execute(sa.text(
-                "SELECT pfad, matnr, parent_matnr, menge, status, urteil, kommentar, reviewer, datum, lauf_id, importiert "
+                "SELECT pfad, matnr, parent_matnr, menge, meins, status, urteil, kommentar, reviewer, datum, lauf_id, importiert "
                 "FROM basis_bom.review WHERE root_matnr = :m AND importiert = "
                 "(SELECT max(importiert) FROM basis_bom.review WHERE root_matnr = :m)"), {"m": matnr}).mappings()]  # fmt: skip
 
@@ -593,8 +696,10 @@ class Dienst:
                                {"m": matnr}).first()  # fmt: skip
         urteile = {r["pfad"]: {"urteil": r["urteil"], "kommentar": r["kommentar"]} for r in rows
                    if r["pfad"] and r["status"] is not None}  # fmt: skip
+        kt = self.kurztext()
         ergaenzt = [{"pfad": r["pfad"], "matnr": r["matnr"], "parent_matnr": r["parent_matnr"], "menge": r["menge"],
-                     "kommentar": r["kommentar"]} for r in rows if r["status"] is None]  # fmt: skip
+                     "meins": r["meins"] or "ST", "kurztext": kt.get(r["matnr"], ""), "kommentar": r["kommentar"]}
+                    for r in rows if r["status"] is None]  # fmt: skip
         veraltet = 0
         if aktuell is not None:
             veraltet = sum(
@@ -649,9 +754,10 @@ class Dienst:
                 parent = zeilen[parent_pfad]["matnr"] if parent_pfad in zeilen else matnr
                 con.execute(sa.text(
                     "INSERT INTO basis_bom.review (root_matnr, matnr, parent_matnr, menge, status, urteil, kommentar,"
-                    " reviewer, lauf_id, importiert, pfad) VALUES (:r, :m, :p, :q, NULL, 'fehlt', :k, :v, :l, :t, :pf)"),
+                    " reviewer, lauf_id, importiert, pfad, meins)"
+                    " VALUES (:r, :m, :p, :q, NULL, 'fehlt', :k, :v, :l, :t, :pf, :e)"),
                     {"r": matnr, "m": m, "p": parent, "q": e.get("menge"), "k": e.get("kommentar") or None, "v": von,
-                     "l": lauf_id, "t": t, "pf": f"{parent_pfad}/+:{m}"})  # fmt: skip
+                     "l": lauf_id, "t": t, "pf": f"{parent_pfad}/+:{m}", "e": e.get("meins") or "ST"})  # fmt: skip
             con.execute(sa.text("DELETE FROM basis_bom.bestaetigt WHERE root_matnr = :r"), {"r": matnr})
         return {"lauf_id": lauf_id, "urteile": len(urteile), "ergaenzt": len(ergaenzt)}
 

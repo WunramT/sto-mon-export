@@ -40,6 +40,7 @@ const zahlFormat = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 3 });
 const fmtMenge = (m, me) => (m === null || m === undefined ? "–" : `${zahlFormat.format(m)} ${me || ""}`.trim());
 
 function toast(text, fehler = false) {
+  if (typeof text !== "string") text = String(text);
   const t = $("#toast");
   t.textContent = text;
   t.className = "toast" + (fehler ? " fehler" : "");
@@ -58,7 +59,7 @@ const STATUS = {
   basis: { text: "Basis", kurz: "Basis" },
   unbedingt: { text: "Immer enthalten", kurz: "Immer" },
   manuell_prüfen: { text: "Manuell prüfen", kurz: "Prüfen" },
-  unterhalb_manuell: { text: "Unter offener Baugruppe", kurz: "Darunter offen" },
+  unterhalb_manuell: { text: "Offen (Baugruppe darüber offen)", kurz: "Offen darüber" },
   ausgeschlossen: { text: "Nicht in Basis", kurz: "Nicht Basis" },
   ausgeschlossen_vererbt: { text: "Nicht in Basis (Baugruppe)", kurz: "Nicht Basis" },
   ignoriert: { text: "Ignoriert (Text)", kurz: "Ignoriert" },
@@ -67,6 +68,8 @@ const IM_ERGEBNIS = new Set(["basis", "unbedingt"]);
 const OFFEN_STATUS = new Set(["manuell_prüfen", "unterhalb_manuell"]);
 const RAUS = new Set(["ausgeschlossen", "ausgeschlossen_vererbt", "ignoriert"]);
 const REGEL_STATUS = { BASIS: "Basis", OFFEN: "Offen", NICHT_BASIS: "Nie Basis" };
+const POSTP = { L: "Lagerposition", N: "Nichtlagerposition", K: "Klassenposition", T: "Textposition", D: "Dokument", R: "Rohmaterial" };
+const mName = (m) => S.meta?.namen?.[m] || m;
 const ZUSTAND = { offen: "Offen", in_arbeit: "In Arbeit", bestaetigt: "Bestätigt", nicht_aufloesbar: "Nicht auflösbar" };
 
 function statusPill(status, vorher) {
@@ -253,20 +256,26 @@ function entwurfEintragText(e) {
   if (e.alias) return `Kürzel ${e.alias} → ${e.merkmal || "–"}`;
   const sys = e.wert === "vorhanden";
   const w = sys ? "" : ` = ${e.wert}`;
-  return `${e.merkmal}${w}: ${regelStatusText(e.vorher.status, e.vorher.rang, sys)} → ${regelStatusText(e.status, e.rang, sys)}`;
+  return `${mName(e.merkmal)}${w}: ${regelStatusText(e.vorher.status, e.vorher.rang, sys)} → ${regelStatusText(e.status, e.rang, sys)}`;
 }
 
 function merkmalKarte(m, { hierWerte = null, gewaehlt, hervor = false } = {}) {
   const imEntwurf = (w) => Boolean(S.entwurf.regeln[`${m.merkmal}|${w}`]);
   const basisWerte = m.werte.filter((w) => w.status === "BASIS").sort((a, b) => a.rang - b.rang);
-  let art = "Rangfolge: der Basiswert mit dem kleinsten Rang gewinnt";
+  let art = basisWerte.length > 1 ? "Rang 1 gewinnt vor Rang 2 … – Reihenfolge mit ▲▼ ändern" : "Rangfolge: Rang 1 gewinnt, wenn mehrere Basiswerte vorkommen";
   if (m.systemregel) art = "Technische Regel – gilt sie in der Basis?";
   if (m.sitzhoehe) art = "Automatisch: der niedrigste vorkommende Wert gewinnt";
   const karte = h("div", { class: "merkmal-karte" + (hervor ? " hervor" : ""), "data-merkmal": m.merkmal },
     h("div", { class: "merkmal-kopf" },
-      h("div", {}, h("div", { class: "mname" }, m.merkmal), h("div", { class: "art" }, art)),
+      h("div", {}, h("div", { class: "mname" }, mName(m.merkmal),
+        mName(m.merkmal) !== m.merkmal ? h("span", { class: "mcode" }, m.merkmal) : null,
+        h("button", { type: "button", class: "umbenennen", title: "Anzeigenamen ändern", "aria-label": `Anzeigenamen für ${m.merkmal} ändern`,
+          onclick: (ev) => { ev.stopPropagation(); namenDialog(m.merkmal); } }, "✎")),
+        h("div", { class: "art" }, art)),
       gewaehlt !== undefined ? h("span", { class: "status " + (gewaehlt ? "s-basis" : "s-manuell_prüfen") },
-        gewaehlt ? `hier gewählt: ${gewaehlt === "vorhanden" ? "gilt" : gewaehlt}` : "hier: noch kein Basiswert") : null));
+        m.systemregel ? (gewaehlt ? "hier: gilt" : "hier: noch offen")
+          : gewaehlt ? `hier gewählt: ${gewaehlt}` : "hier: noch kein Basiswert") : null),
+    m.frage ? h("div", { class: "karte-frage" }, m.frage.text) : null);
   const werte = [...m.werte];
   if (hierWerte) werte.sort((a, b) => (hierWerte.has(b.wert) - hierWerte.has(a.wert)));
   for (const w of werte) {
@@ -278,22 +287,22 @@ function merkmalKarte(m, { hierWerte = null, gewaehlt, hervor = false } = {}) {
         : [["BASIS", "Basis", "b"], ["OFFEN", "Offen", "o"], ["NICHT_BASIS", "Nie Basis", "n"]];
     const hier = hierWerte && hierWerte.has(w.wert);
     karte.append(h("div", { class: "wert-zeile" + (imEntwurf(w.wert) ? " im-entwurf" : "") },
-      h("div", { class: "rang" + (w.status === "BASIS" ? "" : " kein"), title: w.status === "BASIS" ? "Rang" : "" },
-        w.status === "BASIS" && !m.sitzhoehe ? w.rang : "–"),
-      h("div", { class: "wname" }, m.systemregel ? "Regel aktiv" : w.wert,
+      h("div", { class: "rang" + (w.status === "BASIS" ? "" : " kein"), title: w.status === "BASIS" && !m.systemregel ? `Rang ${w.rang}` : "" },
+        w.status === "BASIS" && !m.sitzhoehe && !m.systemregel ? w.rang : m.systemregel ? "" : "–"),
+      h("div", { class: "wname" }, m.systemregel ? "In der Basis:" : w.wert,
         hier ? h("small", {}, gewaehlt === w.wert ? "★ hier gewählt" : "kommt hier vor")
           : w.stuecklisten ? h("small", {}, `in ${w.stuecklisten} Stückliste${w.stuecklisten === 1 ? "" : "n"}`)
-            : w.vorkommen ? h("small", {}, `${w.vorkommen}× im Material`) : null),
+            : w.vorkommen ? h("small", {}, "kommt im Material vor") : null),
       h("div", { class: "status-wahl", role: "group", "aria-label": `Status für ${m.merkmal} ${w.wert}` },
         knoepfe.map(([st, text, cls]) => h("button", {
           type: "button", class: (w.status === st ? `an ${cls}` : ""), "aria-pressed": w.status === st ? "true" : "false",
           onclick: (ev) => { ev.stopPropagation(); setzeStatus(m.merkmal, w.wert, st); },
         }, text))),
-      h("div", { class: "pfeile" },
-        h("button", { type: "button", title: "Rang verbessern (nach oben)", "aria-label": "Rang verbessern", disabled: w.status !== "BASIS" || i <= 0 || m.systemregel || m.sitzhoehe,
+      w.status === "BASIS" && basisWerte.length > 1 && !m.systemregel && !m.sitzhoehe ? h("div", { class: "pfeile" },
+        h("button", { type: "button", title: `${w.wert} wichtiger machen (Rang ${w.rang - 1})`, "aria-label": `${w.wert} Rang höher`, disabled: i <= 0,
           onclick: (ev) => { ev.stopPropagation(); verschiebe(m.merkmal, w.wert, -1); } }, "▲"),
-        h("button", { type: "button", title: "Rang verschlechtern (nach unten)", "aria-label": "Rang verschlechtern", disabled: w.status !== "BASIS" || i < 0 || i >= basisWerte.length - 1 || m.systemregel || m.sitzhoehe,
-          onclick: (ev) => { ev.stopPropagation(); verschiebe(m.merkmal, w.wert, 1); } }, "▼"))));
+        h("button", { type: "button", title: `${w.wert} weniger wichtig machen (Rang ${w.rang + 1})`, "aria-label": `${w.wert} Rang tiefer`, disabled: i >= basisWerte.length - 1,
+          onclick: (ev) => { ev.stopPropagation(); verschiebe(m.merkmal, w.wert, 1); } }, "▼")) : h("div")));
   }
   return karte;
 }
@@ -455,7 +464,7 @@ function zeichneStueckliste() {
         ? h("span", { class: "status s-basis gross" }, "✓ Bestätigt")
         : h("button", { type: "button", class: "knopf haupt klein", disabled: !bestaetigbar(rs), title: bestaetigbar(rs) ? "Material als vollständig geprüft markieren" : "Möglich, sobald alle Zeilen gespeichert mit „✓ Richtig“ bewertet sind",
           onclick: bestaetige }, "Material bestätigen")),
-    !entwurfLeer() ? h("div", { class: "hinweis" }, "Du siehst die Vorschau deines Entwurfs. Bewerten ist erst nach „Übernehmen“ oder „Verwerfen“ möglich.") : null,
+    !entwurfLeer() ? h("div", { class: "hinweis" }, "Sie sehen die Vorschau Ihres Entwurfs. Bewerten ist erst nach „Übernehmen“ oder „Verwerfen“ möglich.") : null,
     d.review?.veraltet ? h("div", { class: "hinweis" }, `Seit der letzten Bewertung haben sich Regeln geändert: ${d.review.veraltet} Positionen haben jetzt einen anderen Status. Bitte diese Zeilen neu bewerten.`) : null,
     d.warnungen?.length ? h("div", { class: "hinweis info" }, d.warnungen.join(" · ")) : null);
   box.replaceChildren(kopf, h("div", { class: "baum", id: "baum" }));
@@ -480,7 +489,7 @@ function zeichneBaum() {
           onclick: (ev) => { ev.stopPropagation(); if (S.zu.has(p.id)) S.zu.delete(p.id); else S.zu.add(p.id); zeichneBaum(); } }, S.zu.has(p.id) ? "▶" : "▼"),
         h("span", { class: `punkt p-${p.status}` }),
         h("span", { class: "name-text" },
-          h("span", { class: "zeile1" }, h("span", { class: "pos" }, p.posnr), h("span", { class: "mat" }, p.matnr || (p.postp === "K" ? "Klassenposition" : "Textposition"))),
+          h("span", { class: "zeile1" }, h("span", { class: "pos" }, p.posnr), h("span", { class: "mat" }, p.matnr || (p.postp === "K" ? "Klassenposition (Material manuell wählen)" : "Textposition"))),
           p.kurztext ? h("span", { class: "kt" }, p.kurztext) : null)),
       h("div", { class: "menge" }, fmtMenge(p.menge_kum, p.meins)),
       h("div", {}, statusPill(p.status, p.vorher)),
@@ -493,13 +502,13 @@ function zeichneBaum() {
       h("div", { class: "name" }, h("span", { class: "punkt p-basis" }), h("span", { class: "name-text" },
         h("span", { class: "zeile1" }, h("span", { class: "mat" }, e.matnr), e.kurztext ? h("span", { class: "kt inline" }, e.kurztext) : null),
         h("span", { class: "kt" }, `unter ${e.parent_matnr}` + (e.kommentar ? ` – ${e.kommentar}` : "")))),
-      h("div", { class: "menge" }, e.menge ?? "–"),
+      h("div", { class: "menge" }, fmtMenge(e.menge, e.meins || "ST")),
       h("div", {}, h("span", { class: "status s-basis" }, e.lokal ? "ergänzt · nicht gespeichert" : "ergänzt")),
       h("div", { class: "bewertung" }, h("button", { type: "button", class: "bew", disabled: !entwurfLeer(), title: "Ergänzung wieder entfernen", onclick: () => {
         if (e.lokal) S.lokalErgaenzt.splice(e.index, 1); else S.entfernt.push(e.pfad);
         speichereLokal(); zeichneStueckliste();
       } }, "Entfernen"))))] : [];
-  baum.replaceChildren(h("div", { class: "baum-kopf", role: "presentation" }, h("div", {}, "Position · Material"), h("div", { style: "text-align:right" }, "Menge gesamt"), h("div", {}, "Status"), h("div", { style: "text-align:right" }, "Ihre Bewertung")),
+  baum.replaceChildren(h("div", { class: "baum-kopf", role: "presentation" }, h("div", {}, "Position · Material"), h("div", { style: "text-align:right" }, "Menge gesamt"), h("div", {}, "Status"), h("div", { style: "text-align:right" }, "Bewertung")),
     ...(zeilen.length ? zeilen : [h("div", { class: "leer-hinweis" }, "Keine Positionen für diesen Filter.")]), ...zusatz);
   baum.setAttribute("role", "tree");
 }
@@ -535,14 +544,17 @@ async function speichereReview() {
   const d = S.daten;
   const urteile = {};
   for (const p of d.positionen) { const u = urteilVon(p.id); if (u) urteile[p.id] = u; }
-  const ergaenzt = [...(d.review?.ergaenzt || []).filter((e) => !S.entfernt.includes(e.pfad)).map((e) => ({ parent_pfad: e.pfad.split("/+:")[0], matnr: e.matnr, menge: e.menge, kommentar: e.kommentar })), ...S.lokalErgaenzt];
+  const ergaenzt = [...(d.review?.ergaenzt || []).filter((e) => !S.entfernt.includes(e.pfad)).map((e) => ({ parent_pfad: e.pfad.split("/+:")[0], matnr: e.matnr, menge: e.menge, meins: e.meins, kommentar: e.kommentar })), ...S.lokalErgaenzt];
   try {
     const r = await api("POST", `/api/review/${d.matnr}`, { von: S.name, urteile, ergaenzt });
     S.lokal = {};
     S.lokalErgaenzt = [];
     S.entfernt = [];
     speichereLokal();
-    toast(`Bewertung gespeichert (${r.urteile} Zeilen${r.ergaenzt ? `, ${r.ergaenzt} ergänzt` : ""}).`);
+    const teile = [];
+    if (r.urteile) teile.push(`${r.urteile} Zeile${r.urteile === 1 ? "" : "n"} bewertet`);
+    if (r.ergaenzt) teile.push(`${r.ergaenzt} Material${r.ergaenzt === 1 ? "" : "ien"} als fehlend ergänzt`);
+    toast(`Gespeichert: ${teile.join(", ") || "keine Bewertungen"}.`);
     await Promise.all([ladeMaterial(d.matnr, { behalteAuswahl: true }), ladeMaterialien()]);
   } catch (e) { toast(e.message, true); }
 }
@@ -560,6 +572,8 @@ async function bestaetige() {
 function zeichneDetails() {
   const box = $("#details");
   const d = S.daten;
+  if (S.ansicht === "regeln") { box.replaceChildren(regelUebersichtRechts()); return; }
+  if (S.ansicht === "auswirkung") { box.replaceChildren(auswirkungRechts()); return; }
   if (!d || d.fehler) { box.replaceChildren(h("div", { class: "details" }, h("p", { class: "unter" }, "Hier erscheinen Details zur gewählten Position."))); return; }
   const p = d.positionen.find((x) => x.id === S.auswahl);
   if (!p) { box.replaceChildren(materialUebersicht()); return; }
@@ -591,7 +605,7 @@ function zeichneDetails() {
         h("div", { class: "roh" }, b.name, b.rolle === "prozedur_ignoriert" ? " · Prozedur, wird ignoriert" : ""),
         ...b.pruefungen.map((x) => h("div", { class: "pruefung" },
           h("span", { class: `ergebnis e-${x.ergebnis}` }, x.ergebnis === "passt" ? "passt" : x.ergebnis === "passt_nicht" ? "passt nicht" : "offen"),
-          h("span", {}, x.wert === "vorhanden" ? `${x.merkmal}` : `${x.merkmal} = ${x.wert.replace("≠", "≠ ")}`))),
+          h("span", {}, x.wert === "vorhanden" ? mName(x.merkmal) : x.wert.startsWith("≠") ? `${mName(x.merkmal)} nicht ${x.wert.slice(1)}` : `${mName(x.merkmal)} = ${x.wert}`))),
         b.fehler ? h("div", { class: "pruefung" }, h("span", { class: "ergebnis e-manuell" }, "unlesbar"), b.fehler) : null))
         : h("p", { class: "unter" }, "Keine Bedingung – die Position ist immer enthalten."),
       p.prozeduren.length ? h("p", { class: "unter" }, `Ignorierte Prozeduren: ${p.prozeduren.join(", ")}`) : null),
@@ -600,13 +614,13 @@ function zeichneDetails() {
         h("dt", {}, "Menge je Baugruppe"), h("dd", {}, fmtMenge(p.menge, p.meins)),
         h("dt", {}, "Menge gesamt"), h("dd", {}, fmtMenge(p.menge_kum, p.meins), h("small", { style: "color:var(--text-3);display:block" }, "bezogen auf 1 Stück des Materials")),
         h("dt", {}, "Stückliste"), h("dd", {}, p.stlnr),
-        h("dt", {}, "Positionstyp"), h("dd", {}, p.postp || "–"))));
+        h("dt", {}, "Positionstyp"), h("dd", {}, POSTP[p.postp] ? `${POSTP[p.postp]} (${p.postp})` : p.postp || "–"))));
   box.replaceChildren(inhalt);
   if (S.fokusMerkmal) { const k = box.querySelector(`[data-merkmal="${CSS.escape(S.fokusMerkmal)}"]`); if (k) k.scrollIntoView({ block: "center" }); }
 }
 
 function frageZeile(f) {
-  if (f.typ === "rang") return h("div", { class: "frage" }, h("span", {}, f.text), h("button", { type: "button", class: "knopf klein", onclick: () => { S.fokusMerkmal = f.merkmal; zeichneDetails(); } }, "Festlegen"));
+  if (f.typ === "rang" || f.typ === "systemregel" || f.typ === "merkmal") return h("div", { class: "frage" }, h("span", {}, f.text), h("button", { type: "button", class: "knopf klein", onclick: () => { S.fokusMerkmal = f.merkmal; zeichneDetails(); } }, "Festlegen"));
   if (f.typ === "kuerzel") return h("div", { class: "frage" }, h("span", {}, f.text), h("button", { type: "button", class: "knopf klein", onclick: () => kuerzelDialog(f.alias) }, "Zuordnen"));
   return h("div", { class: "frage" }, h("span", {}, f.text));
 }
@@ -619,6 +633,7 @@ function ergaenzenDialog(parentId) {
   const nr = h("input", { type: "text", placeholder: "z. B. 10000999", "aria-label": "Materialnummer", inputmode: "numeric" });
   const info = h("div", { class: "feld-info" }, " ");
   const menge = h("input", { type: "number", min: "0", step: "any", value: "1", "aria-label": "Menge" });
+  const einheit = h("select", { "aria-label": "Einheit" }, ...["ST", "M", "M2", "KG", "L", "PAA"].map((e) => h("option", { value: e }, e)));
   const kommentar = h("input", { type: "text", placeholder: "optional", "aria-label": "Kommentar" });
   let geprueft = null;
   nr.addEventListener("input", () => {
@@ -631,7 +646,7 @@ function ergaenzenDialog(parentId) {
     ergaenzenDialog._t = setTimeout(async () => {
       try {
         geprueft = await api("GET", `/api/materialinfo/${encodeURIComponent(wert)}`);
-        info.textContent = geprueft.bekannt ? `✓ ${geprueft.kurztext || "bekanntes Material"}` : "Unbekannte Materialnummer – bitte prüfen (kann trotzdem ergänzt werden).";
+        info.textContent = geprueft.bekannt ? `✓ ${geprueft.kurztext || "bekanntes Material"}` : "Diese Nummer ist im SAP-Export unbekannt – bitte prüfen (ergänzen ist trotzdem möglich).";
         info.className = "feld-info " + (geprueft.bekannt ? "gut" : "warn");
       } catch { info.textContent = " "; }
     }, 250);
@@ -642,7 +657,7 @@ function ergaenzenDialog(parentId) {
     if (!(Number(menge.value) > 0)) { toast("Bitte eine Menge größer 0 eintragen.", true); menge.focus(); return; }
     const parent = unter.value === d.matnr ? { matnr: d.matnr } : d.positionen.find((p) => p.id === unter.value);
     S.lokalErgaenzt.push({ parent_pfad: unter.value, parent_matnr: parent.matnr, matnr: wert, kurztext: geprueft?.kurztext || "",
-      menge: Number(menge.value), kommentar: kommentar.value.trim() || null });
+      menge: Number(menge.value), meins: einheit.value, kommentar: kommentar.value.trim() || null });
     speichereLokal();
     schliesseDialog();
     zeichneStueckliste();
@@ -652,29 +667,34 @@ function ergaenzenDialog(parentId) {
     h("p", {}, "Für Materialien, die in die Basis-Stückliste gehören, aber im Baum ganz fehlen."),
     h("label", {}, "Unter Baugruppe"), unter,
     h("label", {}, "Materialnummer"), nr, info,
-    h("div", { style: "display:grid;grid-template-columns:120px 1fr;gap:10px" },
-      h("div", {}, h("label", {}, "Menge"), menge), h("div", {}, h("label", {}, "Kommentar"), kommentar))],
+    h("div", { style: "display:grid;grid-template-columns:100px 90px 1fr;gap:10px" },
+      h("div", {}, h("label", {}, "Menge"), menge), h("div", {}, h("label", {}, "Einheit"), einheit), h("div", {}, h("label", {}, "Kommentar"), kommentar))],
   [h("button", { type: "button", class: "knopf", onclick: schliesseDialog }, "Abbrechen"), h("button", { type: "button", class: "knopf haupt", onclick: ok }, "Ergänzen")]);
   setTimeout(() => nr.focus(), 0);
 }
 
+function frageKnopf(f, beiKlick) {
+  if (f.typ === "kuerzel") return h("button", { type: "button", class: "knopf klein", onclick: () => kuerzelDialog(f.alias) }, "Zuordnen");
+  return h("button", { type: "button", class: "knopf klein", onclick: beiKlick }, f.typ === "unlesbar" ? "Zeigen" : "Festlegen");
+}
+
+function fragenListe(titel, fragen, zusatz, beiKlick) {
+  return h("div", { class: "abschnitt" }, h("h3", {}, `${titel} (${fragen.length})`),
+    ...fragen.map((f) => h("div", { class: "frage" + (f.typ === "unlesbar" ? " hinweis-frage" : "") },
+      h("span", {}, f.text, h("br"), h("small", { style: "color:var(--text-2)" }, zusatz(f))), frageKnopf(f, () => beiKlick(f)))));
+}
+
 function materialUebersicht() {
   const d = S.daten;
-  const fragen = new Map();
-  for (const p of d.positionen) for (const f of p.fragen) {
-    const key = `${f.typ}|${f.merkmal || f.alias || f.text}`;
-    if (!fragen.has(key)) fragen.set(key, { ...f, anzahl: 0, beispiel: p.id });
-    fragen.get(key).anzahl++;
-  }
-  const liste = [...fragen.values()].sort((a, b) => b.anzahl - a.anzahl);
+  const zeige = (f) => { S.auswahl = f.beispiel; S.fokusMerkmal = f.merkmal || null; zeichneBaum(); zeichneDetails(); };
+  const pos = (f) => `betrifft ${f.positionen} Position${f.positionen === 1 ? "" : "en"} in diesem Material`;
   return h("div", { class: "details" },
     h("h2", {}, "Was ist zu tun?"),
-    h("p", { class: "unter" }, "Wähle im Baum eine Position, um zu sehen, warum sie diesen Status hat."),
-    liste.length ? h("div", { class: "abschnitt" }, h("h3", {}, `Offene Fragen in diesem Material (${liste.length})`),
-      ...liste.map((f) => h("div", { class: "frage" }, h("span", {}, f.text, h("br"), h("small", { style: "color:var(--text-2)" }, `betrifft ${f.anzahl} Position${f.anzahl === 1 ? "" : "en"}`)),
-        f.typ === "unlesbar" ? h("button", { type: "button", class: "knopf klein", onclick: () => waehle(f.beispiel) }, "Zeigen")
-          : h("button", { type: "button", class: "knopf klein", onclick: () => { if (f.typ === "kuerzel") kuerzelDialog(f.alias); else { S.auswahl = f.beispiel; S.fokusMerkmal = f.merkmal; zeichneBaum(); zeichneDetails(); } } }, f.typ === "kuerzel" ? "Zuordnen" : "Festlegen"))))
+    h("p", { class: "unter" }, "Wählen Sie im Baum eine Position, um zu sehen, warum sie diesen Status hat."),
+    d.fragen.length ? fragenListe("Offene Regelfragen in diesem Material", d.fragen, pos, zeige)
       : h("div", { class: "hinweis gut" }, "Keine offenen Regelfragen in diesem Material."),
+    d.hinweise.length ? fragenListe("Nicht lesbare Bedingungen (nur in SAP lösbar)", d.hinweise, pos, zeige) : null,
+    S.meta?.offen > d.fragen.length ? h("p", { class: "unter" }, `Insgesamt ${S.meta.offen} offene Regelfragen – alle im Reiter „Regeln“.`) : null,
     h("div", { class: "abschnitt" }, h("h3", {}, "So geht's"),
       h("ol", { class: "einfach" },
         h("li", {}, "Offene Fragen klären: Basiswerte festlegen – der Baum rechnet sofort neu."),
@@ -683,11 +703,41 @@ function materialUebersicht() {
         h("li", {}, "Zeilen bewerten, speichern und das Material bestätigen."))));
 }
 
+function regelUebersichtRechts() {
+  const d = S.regelDaten;
+  if (!d) return h("div", { class: "details" }, h("p", { class: "unter" }, "Lädt …"));
+  const stl = (f) => `in ${f.stuecklisten} Stückliste${f.stuecklisten === 1 ? "" : "n"}`;
+  const springe = (f) => {
+    if (!f.merkmal) return;
+    S.regelnQ = ""; S.fokusMerkmal = f.merkmal;
+    zeichneRegeln();
+    const k = document.querySelector(`#ansicht-regeln [data-merkmal="${CSS.escape(f.merkmal)}"]`);
+    if (k) { k.scrollIntoView({ block: "center" }); k.classList.add("hervor"); }
+  };
+  return h("div", { class: "details" },
+    h("h2", {}, "Offene Regelfragen"),
+    h("p", { class: "unter" }, "Diese Liste ist vollständig: die Zahl oben im Kopf zählt genau diese Fragen."),
+    d.fragen.length ? fragenListe("Zu entscheiden", d.fragen, stl, springe) : h("div", { class: "hinweis gut" }, "Alle Regelfragen sind entschieden."),
+    d.hinweise.length ? fragenListe("Nicht lesbare Bedingungen (nur in SAP lösbar)", d.hinweise, stl, () => toast("Diese Bedingung muss in SAP umformuliert werden – die betroffenen Positionen bitte manuell bewerten.")) : null);
+}
+
+function auswirkungRechts() {
+  return h("div", { class: "details" },
+    h("h2", {}, "Auswirkung lesen"),
+    h("ul", { class: "einfach" },
+      h("li", {}, "Jede Zeile ist ein Material, dessen Basis-Stückliste sich durch Ihren Entwurf ändert."),
+      h("li", {}, "„Geänderte Positionen“: wie viele Positionen von welchem Status in welchen wechseln."),
+      h("li", {}, "„In der Basis-Stückliste“: Anzahl Positionen vorher → nachher."),
+      h("li", {}, "Klick auf eine Zeile öffnet das Material mit dem Entwurf.")),
+    h("p", { class: "unter" }, "Nichts wird gespeichert, bevor Sie „Übernehmen“ wählen."));
+}
+
 // ------------------------------------------------------------------------------------------------ Regel-Ansicht
 async function ladeRegelAnsicht() {
   const d = await api("POST", `/api/regeln?q=${encodeURIComponent(S.regelnQ)}&nur_offen=${S.regelnNurOffen}`, { entwurf: entwurfPayload() });
   S.regelDaten = d;
   $("#offen-zahl").textContent = d.offen || "";
+  if (S.ansicht === "regeln") zeichneDetails();
   for (const m of d.merkmale) if (!S.merkmale[m.merkmal] || !S.daten?.merkmale?.some((x) => x.merkmal === m.merkmal)) S.merkmale[m.merkmal] = m;
   zeichneRegeln();
 }
@@ -699,16 +749,19 @@ function zeichneRegeln() {
   if (S.regelnNurMaterial && S.daten?.merkmale) { const hier = new Set(S.daten.merkmale.map((m) => m.merkmal)); merkmale = merkmale.filter((m) => hier.has(m.merkmal)); }
   box.replaceChildren(
     h("div", { class: "regel-werkzeuge" },
-      h("input", { class: "baum-suche", type: "search", placeholder: "Merkmal suchen", value: S.regelnQ, style: "width:240px",
+      h("input", { class: "baum-suche", type: "search", placeholder: "Merkmal suchen", value: S.regelnQ, style: "width:200px",
         oninput: (ev) => { S.regelnQ = ev.target.value; clearTimeout(zeichneRegeln._t); zeichneRegeln._t = setTimeout(ladeRegelAnsicht, 200); } }),
       h("label", {}, h("input", { type: "checkbox", checked: S.regelnNurOffen, onchange: (ev) => { S.regelnNurOffen = ev.target.checked; ladeRegelAnsicht(); } }), " nur Merkmale mit offenen Werten"),
       S.daten?.merkmale ? h("label", {}, h("input", { type: "checkbox", checked: S.regelnNurMaterial, onchange: (ev) => { S.regelnNurMaterial = ev.target.checked; zeichneRegeln(); } }), ` nur Merkmale aus ${S.daten.matnr}`) : null,
-      h("span", { class: "unter", style: "margin-left:auto;color:var(--text-2)" }, `${merkmale.length} Merkmal${merkmale.length === 1 ? "" : "e"}`)),
+      h("span", { class: "unter", style: "margin-left:auto;color:var(--text-2)" }, S.regelnNurOffen
+        ? `${d?.offen || 0} offene Regelfrage${d?.offen === 1 ? "" : "n"}: ${merkmale.length} Merkmal${merkmale.length === 1 ? "" : "e"}, ${d?.kuerzel?.length || 0} Kürzel`
+        : `${merkmale.length} Merkmal${merkmale.length === 1 ? "" : "e"}`)),
+    d?.hinweise?.length ? h("div", { class: "hinweis", style: "margin:10px 18px 0" }, `${d.hinweise.length} Bedingung${d.hinweise.length === 1 ? " ist" : "en sind"} nicht lesbar und nur in SAP lösbar – Liste rechts.`) : null,
     d?.kuerzel?.length ? h("div", { style: "padding:10px 18px 0" }, h("div", { class: "gruppen-titel", style: "padding:0 0 6px" }, `Kürzel ohne Zuordnung (${d.kuerzel.length})`),
       h("div", { style: "display:flex;gap:6px;flex-wrap:wrap" }, ...d.kuerzel.map((k) => h("span", { class: "chip gross" }, h("strong", {}, k.alias),
         h("span", { style: "color:var(--text-2)" }, `in ${k.stuecklisten} Stückliste${k.stuecklisten === 1 ? "" : "n"}`),
         h("button", { type: "button", class: "knopf klein", onclick: () => kuerzelDialog(k.alias) }, "Zuordnen"))))) : null,
-    merkmale.length ? h("div", { class: "regel-liste" }, ...merkmale.map((m) => merkmalKarte(S.merkmale[m.merkmal] && entwurfLeer() ? m : m)))
+    merkmale.length ? h("div", { class: "regel-liste" }, ...merkmale.map((m) => merkmalKarte(m, { hervor: S.fokusMerkmal === m.merkmal })))
       : h("div", { class: "leer-hinweis" }, S.regelnNurOffen ? "Keine Merkmale mit offenen Werten – Häkchen oben entfernen, um alle zu sehen." : "Keine Merkmale gefunden."));
 }
 
@@ -725,7 +778,7 @@ async function berechneAuswirkung() {
 function zeichneAuswirkung() {
   const box = $("#ansicht-auswirkung");
   if (entwurfLeer()) {
-    box.replaceChildren(h("div", { class: "leer-hinweis" }, h("p", {}, "Kein Entwurf offen."), h("p", {}, "Ändere eine Regel (Status oder Rang) – hier siehst du dann, welche Materialien sich dadurch ändern.")));
+    box.replaceChildren(h("div", { class: "leer-hinweis" }, h("p", {}, "Kein Entwurf offen."), h("p", {}, "Ändern Sie eine Regel (Status oder Rang) – hier sehen Sie dann, welche Materialien sich dadurch ändern.")));
     return;
   }
   if (!S.auswirkung) { berechneAuswirkung(); return; }
@@ -733,7 +786,7 @@ function zeichneAuswirkung() {
   if (a.fehler) { box.replaceChildren(h("div", { class: "leer-hinweis" }, a.fehler)); return; }
   box.replaceChildren(
     h("div", { style: "padding:16px 18px" },
-      h("h2", { style: "margin:0 0 4px;font-size:16px" }, a.betroffen ? `Dein Entwurf ändert ${a.betroffen} Material${a.betroffen === 1 ? "" : "ien"}` : "Dein Entwurf ändert keine Stückliste"),
+      h("h2", { style: "margin:0 0 4px;font-size:16px" }, a.betroffen ? `Ihr Entwurf ändert ${a.betroffen} Material${a.betroffen === 1 ? "" : "ien"}` : "Ihr Entwurf ändert keine Stückliste"),
       h("p", { class: "unter", style: "color:var(--text-2);margin:0" }, `${a.geprueft} Materialien enthalten die geänderten Merkmale und wurden neu gerechnet.`),
       h("button", { type: "button", class: "knopf klein", style: "margin-top:8px", onclick: berechneAuswirkung }, "Neu berechnen")),
     a.materialien.length ? h("table", { class: "tabelle" },
@@ -773,13 +826,30 @@ function nameDialog(danach) {
     if (danach) danach();
   };
   eingabe.addEventListener("keydown", (ev) => { if (ev.key === "Enter") speichern(); });
-  dialog("Wie heißt du?", [h("p", {}, "Dein Name wird bei Regeländerungen und Bewertungen gespeichert, damit nachvollziehbar ist, wer was entschieden hat."), eingabe],
+  dialog("Wie heißen Sie?", [h("p", {}, "Ihr Name wird bei Regeländerungen und Bewertungen gespeichert, damit nachvollziehbar ist, wer was entschieden hat."), eingabe],
     [h("button", { type: "button", class: "knopf haupt", onclick: speichern }, "Weiter")]);
+}
+
+function namenDialog(merkmal) {
+  const eingabe = h("input", { type: "text", value: mName(merkmal) === merkmal ? "" : mName(merkmal), placeholder: "z. B. Sitzqualität", "aria-label": "Anzeigename" });
+  const speichern = async () => {
+    try {
+      await api("PUT", "/api/merkmalname", { merkmal, text: eingabe.value });
+      schliesseDialog();
+      await ladeMeta();
+      toast("Anzeigename gespeichert.");
+      zeichne();
+      if (S.ansicht === "regeln") ladeRegelAnsicht();
+    } catch (e) { toast(e.message, true); }
+  };
+  eingabe.addEventListener("keydown", (ev) => { if (ev.key === "Enter") speichern(); });
+  dialog(`Anzeigename für ${merkmal}`, [h("p", {}, "So heißt das Merkmal in dieser Oberfläche. Der SAP-Name bleibt klein daneben sichtbar. Leer lassen = SAP-Name."), eingabe],
+    [h("button", { type: "button", class: "knopf", onclick: schliesseDialog }, "Abbrechen"), h("button", { type: "button", class: "knopf haupt", onclick: speichern }, "Speichern")]);
 }
 
 function kuerzelDialog(alias) {
   const bekannte = [...new Set([...Object.keys(S.merkmale), ...Object.keys(S.basisRegeln).map((k) => k.split("|")[0])])].sort();
-  const liste = h("datalist", { id: "merkmal-liste" }, ...bekannte.map((m) => h("option", { value: m })));
+  const liste = h("datalist", { id: "merkmal-liste" }, ...bekannte.map((m) => h("option", { value: m, label: mName(m) !== m ? mName(m) : null })));
   const eingabe = h("input", { type: "text", list: "merkmal-liste", placeholder: "Merkmalname laut SAP, z. B. SITZQUALI", "aria-label": "Merkmal" });
   dialog(`Kürzel „${alias}“ zuordnen`, [h("p", {}, "Zu welchem Merkmal gehört dieses Kürzel in den Bedingungsnamen?"), eingabe, liste,
     h("p", { class: "unter", style: "color:var(--text-2)" }, "Die Zuordnung landet im Entwurf – der Baum zeigt sofort, was sich ändert.")],
@@ -790,14 +860,19 @@ function kuerzelDialog(alias) {
 async function uebernehmenDialog() {
   if (!(await brauchtName())) return;
   const begr = h("textarea", { placeholder: "z. B. „Laut Produktmanagement ist FK die Standardausführung“", "aria-label": "Begründung" });
+  begr.addEventListener("input", () => {
+    const ok = begr.value.trim().length >= 5;
+    $("#uebernehmen-ok").disabled = !ok;
+    $("#begr-info").textContent = ok ? " " : "Mindestens 5 Zeichen – andere sollen die Entscheidung nachvollziehen können.";
+  });
   const aenderungen = [...Object.values(S.entwurf.regeln), ...Object.values(S.entwurf.aliasse)];
   dialog("Regeländerungen übernehmen", [
     h("p", {}, aenderungen.length === 1 ? "Diese Änderung gilt danach für alle Materialien und alle Kolleg:innen:" : `Diese ${aenderungen.length} Änderungen gelten danach für alle Materialien und alle Kolleg:innen:`),
     h("ul", { class: "einfach" }, ...aenderungen.map((e) => h("li", {}, entwurfEintragText(e)))),
-    h("label", {}, "Begründung (Pflicht, für die Historie)"), begr, h("div", { class: "feld-info", id: "begr-info" }, " "),
+    h("label", {}, "Begründung (Pflicht, für die Historie)"), begr, h("div", { class: "feld-info", id: "begr-info" }, "Mindestens 5 Zeichen – andere sollen die Entscheidung nachvollziehen können."),
     h("p", { class: "unter", style: "color:var(--text-2)" }, `Gespeichert als: ${S.name}`)],
   [h("button", { type: "button", class: "knopf", onclick: schliesseDialog }, "Abbrechen"),
-    h("button", { type: "button", class: "knopf haupt", onclick: async (ev) => {
+    h("button", { type: "button", class: "knopf haupt", id: "uebernehmen-ok", disabled: true, onclick: async (ev) => {
       if (begr.value.trim().length < 5) { const i = $("#begr-info"); i.textContent = "Bitte kurz begründen (mindestens 5 Zeichen) – andere sollen die Entscheidung nachvollziehen können."; i.className = "feld-info warn"; begr.focus(); return; }
       ev.target.disabled = true;
       try {
@@ -818,9 +893,9 @@ async function uebernehmenDialog() {
 
 function konfliktDialog(konflikte) {
   dialog("Jemand hat diese Regeln inzwischen geändert", [
-    h("p", {}, "Seit du angefangen hast, wurden folgende Werte von jemand anderem geändert:"),
+    h("p", {}, "Seit Sie angefangen haben, wurden folgende Werte von jemand anderem geändert:"),
     h("ul", { class: "einfach" }, ...konflikte.map((k) => h("li", {}, k.art === "regel" ? `${k.merkmal} = ${k.wert}: jetzt ${REGEL_STATUS[k.jetzt.status]}${k.jetzt.rang ? ` (Rang ${k.jetzt.rang})` : ""}` : `Kürzel ${k.alias}: jetzt ${k.jetzt.merkmal || "–"}`))),
-    h("p", {}, "Lade den aktuellen Stand: Deine übrigen Änderungen bleiben im Entwurf, die betroffenen Werte kannst du danach neu setzen.")],
+    h("p", {}, "Laden Sie den aktuellen Stand: Ihre übrigen Änderungen bleiben im Entwurf, die betroffenen Werte können Sie danach neu setzen.")],
   [h("button", { type: "button", class: "knopf haupt", onclick: async () => {
     for (const k of konflikte) { if (k.art === "regel") delete S.entwurf.regeln[`${k.merkmal}|${k.wert}`]; else delete S.entwurf.aliasse[k.alias]; }
     await ladeBasisRegeln();
@@ -845,11 +920,11 @@ function hilfeDialog() {
     h("div", { class: "legende" }, ...["basis", "unbedingt", "manuell_prüfen", "unterhalb_manuell", "ausgeschlossen", "ausgeschlossen_vererbt"].flatMap(zeile)),
     h("h3", { style: "font-size:14px;margin-top:16px" }, "Ablauf"),
     h("ol", { class: "einfach" },
-      h("li", {}, "Material wählen, offene Fragen rechts klären – jede Regeländerung ist zunächst ein Entwurf nur für dich."),
+      h("li", {}, "Material wählen, offene Fragen rechts klären – jede Regeländerung ist zunächst ein Entwurf nur für Sie."),
       h("li", {}, "„Auswirkung auf alle Materialien“ zeigt, welche anderen Stücklisten sich mitändern."),
       h("li", {}, "„Übernehmen“ speichert die Regeln für alle (mit Name und Begründung)."),
       h("li", {}, "Zeilen bewerten: „✓ Richtig“, wenn der Status passt; „Sollte raus“ bzw. „Sollte rein“, wenn er falsch ist. Speichern, dann das Material bestätigen."),
-      h("li", {}, "Dein Entwurf und deine ungespeicherten Bewertungen bleiben auch nach dem Neuladen erhalten."))],
+      h("li", {}, "Ihr Entwurf und Ihre ungespeicherten Bewertungen bleiben auch nach dem Neuladen erhalten."))],
   [h("button", { type: "button", class: "knopf haupt", onclick: schliesseDialog }, "Verstanden")]);
 }
 
@@ -860,6 +935,7 @@ function wechsleAnsicht(ansicht) {
   for (const a of ["stueckliste", "regeln", "auswirkung"]) $(`#ansicht-${a}`).hidden = a !== ansicht;
   if (ansicht === "regeln") ladeRegelAnsicht();
   if (ansicht === "auswirkung") zeichneAuswirkung();
+  zeichneDetails();
 }
 
 function zeichne() {
@@ -888,9 +964,9 @@ async function start() {
   $("#nutzer-knopf").addEventListener("click", () => nameDialog());
   $("#hilfe-knopf").addEventListener("click", hilfeDialog);
   $("#verwerfen-knopf").addEventListener("click", () => {
-    dialog("Entwurf verwerfen?", h("p", {}, "Alle Änderungen im Entwurf gehen verloren."), [
+    dialog("Entwurf verwerfen?", h("p", {}, `Alle ${entwurfAnzahl() === 1 ? "" : entwurfAnzahl() + " "}Änderungen im Entwurf gehen verloren. Der übernommene Stand bleibt unverändert.`), [
       h("button", { type: "button", class: "knopf", onclick: schliesseDialog }, "Abbrechen"),
-      h("button", { type: "button", class: "knopf haupt", onclick: () => { S.entwurf = { regeln: {}, aliasse: {} }; schliesseDialog(); entwurfGeaendert(); } }, "Verwerfen")]);
+      h("button", { type: "button", class: "knopf gefahr", onclick: () => { S.entwurf = { regeln: {}, aliasse: {} }; schliesseDialog(); entwurfGeaendert(); toast("Entwurf verworfen."); } }, "Entwurf verwerfen")]);
   });
   $("#uebernehmen-knopf").addEventListener("click", uebernehmenDialog);
   $("#auswirkung-knopf").addEventListener("click", () => { wechsleAnsicht("auswirkung"); });

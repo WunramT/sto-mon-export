@@ -37,12 +37,12 @@ def test_material_mit_erklaerung_und_fragen(client):
     pos = {p["matnr"]: p for p in d["positionen"] if p["matnr"]}
     assert pos["10000102"]["status"] == "manuell_prüfen"
     assert pos["10000102"]["fragen"][0] == {
-        "typ": "rang", "merkmal": "SITZQUALI",
-        "text": "SITZQUALI: Auf dieser Stückliste kommt nur FK vor – ist FK ein Basiswert?"}  # fmt: skip
+        "typ": "rang", "merkmal": "SITZQUALI", "schluessel": "merkmal:SITZQUALI",
+        "text": "Sitzqualität: Auf dieser Stückliste kommt nur FK vor – ist FK ein Basiswert?"}  # fmt: skip
     assert (
-        pos["10000016"]["fragen"][0]["text"] == "Gilt die technische Regel PP4000_KS_VERERBEN in der Basis?"
+        pos["10000016"]["fragen"][0]["text"] == "Gilt die technische Regel „PP4000_KS_VERERBEN“ in der Basis?"
     )
-    assert "verlangt SITZQUALI = FK, Basis ist HR" in pos["10000003"]["erklaerung"]
+    assert "verlangt Sitzqualität = FK, Basis ist HR" in pos["10000003"]["erklaerung"]
     assert pos["10000006"]["fragen"][0]["typ"] == "kuerzel"
     assert "SITZQUALI" in {m["merkmal"] for m in d["merkmale"]}
     assert d["ebenen"]["1000"]["gewaehlt"]["SITZQUALI"] == "HR"
@@ -91,7 +91,7 @@ def test_kuerzel_im_entwurf(client):
     d = client.post("/api/material/90000001", json={"entwurf": e}).json()
     p = next(x for x in d["positionen"] if x["matnr"] == "10000006")
     assert [(f["typ"], f["merkmal"]) for f in p["fragen"]] == [("rang", "SITZTIEFE")]
-    assert p["fragen"][0]["text"] == "SITZTIEFE: Auf dieser Stückliste kommt nur 1 vor – ist 1 ein Basiswert?"
+    assert p["fragen"][0]["text"] == "Sitztiefe: Auf dieser Stückliste kommt nur 1 vor – ist 1 ein Basiswert?"
 
 
 def test_review_bestaetigen_und_regression(client, fixture_db):
@@ -149,8 +149,16 @@ def test_regeln_mit_beobachteten_werten_und_kuerzeln(client):
     assert "ZZ" in {k["alias"] for k in d["kuerzel"]}
     vorher = client.get("/api/meta").json()["offen"]
     assert d["offen"] == vorher > 0
+    assert d["offen"] == len(d["fragen"])  # eine Liste, eine Zahl
+    frage = next(f for f in d["fragen"] if f.get("merkmal") == "SITZQUALI")
+    assert "FK" in frage["werte"] and sq["frage"] == frage
     r = client.post("/api/regeln", json={"entwurf": FK_BASIS}).json()
-    assert r["offen"] == vorher - 1  # FK entschieden → eine offene Frage weniger
+    frage = next(f for f in r["fragen"] if f.get("merkmal") == "SITZQUALI")
+    assert "FK" not in frage["werte"]  # FK entschieden, BS/XX bleiben offen
+    m = client.post("/api/material/90000001", json={"entwurf": None}).json()
+    schluessel = {f["schluessel"] for f in d["fragen"]}
+    assert m["fragen"] and {f["schluessel"] for f in m["fragen"]} <= schluessel  # Material zeigt Teilmenge
+    assert all(f["positionen"] >= 1 for f in m["fragen"])
 
 
 def test_entwurf_serverseitig_und_materialinfo(client):

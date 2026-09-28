@@ -35,6 +35,11 @@ class Bestaetigung(BaseModel):
     von: str
 
 
+class MerkmalName(BaseModel):
+    merkmal: str
+    text: str
+
+
 class EntwurfDaten(BaseModel):
     name: str
     entwurf: dict
@@ -111,6 +116,15 @@ def erstelle_app(eng: Engine) -> FastAPI:
     @app.put("/api/entwurf")
     def entwurf_speichern(body: EntwurfDaten):
         dienst.entwurf_speichern(body.name, body.entwurf)
+        return {"ok": True}
+
+    @app.put("/api/merkmalname")
+    def merkmalname(body: MerkmalName):
+        try:
+            dienst.merkmal_name_setzen(body.merkmal, body.text)
+        except Eingabefehler as exc:
+            return fehler(exc)
+        dienst._cache.clear()
         return {"ok": True}
 
     @app.post("/api/neu-laden")

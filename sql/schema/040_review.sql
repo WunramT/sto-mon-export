@@ -32,3 +32,17 @@ CREATE TABLE IF NOT EXISTS basis_bom.entwurf (
     daten     jsonb NOT NULL,
     geaendert timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE basis_bom.review ADD COLUMN IF NOT EXISTS meins text;
+
+-- Web-Oberfläche: Anzeigename je Merkmal (vom Fachbereich pflegbar; ohne Eintrag wird der SAP-Name gezeigt).
+-- Startwerte sind aus den SAP-Namen abgeleitet (Annahme) und in der Oberfläche änderbar.
+CREATE TABLE IF NOT EXISTS basis_bom.merkmal_text (
+    merkmal text PRIMARY KEY,
+    text    text NOT NULL
+);
+INSERT INTO basis_bom.merkmal_text (merkmal, text) VALUES
+    ('SITZQUALI', 'Sitzqualität'), ('SITZHOEHE', 'Sitzhöhe'), ('SITZTIEFE', 'Sitztiefe'),
+    ('FUNKTION', 'Funktion'), ('AKKU', 'Akku'), ('ELEKTRO', 'Elektrik'),
+    ('ARM_L', 'Armteil links'), ('ARM_R', 'Armteil rechts'), ('ARM_OPTIK', 'Armoptik'),
+    ('RUECKEN_FUNK', 'Rückenfunktion'), ('RUECKEN_OPTIK', 'Rückenoptik')
+ON CONFLICT (merkmal) DO NOTHING;

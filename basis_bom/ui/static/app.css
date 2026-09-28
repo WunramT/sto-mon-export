@@ -126,7 +126,6 @@ input, textarea, select { font: inherit; }
 button.kennzahl:hover { background: var(--hg); }
 .werkzeuge { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .werkzeuge .baum-suche { width: 170px; }
-.werkzeuge { flex-wrap: nowrap; }
 .segment { display: inline-flex; border: 1px solid var(--linie-stark); border-radius: 6px; overflow: hidden; }
 .segment button { white-space: nowrap; border: none; border-right: 1px solid var(--linie); background: var(--flaeche); padding: 5px 10px; font-size: 13px; color: var(--text-2); }
 .segment button:last-child { border-right: none; }
@@ -223,7 +222,9 @@ textarea { width: 100%; min-height: 60px; border: 1px solid var(--linie-stark); 
 .status-wahl button.an.n { background: var(--aus); color: #fff; }
 .pfeile { display: inline-flex; gap: 2px; }
 .pfeile button { border: 1px solid var(--linie); background: var(--flaeche); border-radius: 4px; width: 24px; height: 24px; padding: 0; color: var(--text-2); }
-.pfeile button:disabled { visibility: hidden; }
+.pfeile button:disabled { opacity: .3; cursor: default; }
+.pfeile { flex-direction: column; gap: 1px; }
+.pfeile button { width: 26px; height: 17px; font-size: 10px; line-height: 1; }
 .merkmal-hinweis { padding: 6px 12px 8px; font-size: 12px; color: var(--text-2); }
 .regel-werkzeuge { display: flex; gap: 8px; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--linie); position: sticky; top: 0; background: var(--flaeche); z-index: 1; flex-wrap: wrap; }
 .regel-liste { padding: 4px 18px 40px; display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 0 14px; }
@@ -242,8 +243,15 @@ textarea { width: 100%; min-height: 60px; border: 1px solid var(--linie-stark); 
 .dialog label { display: block; font-weight: 600; margin: 12px 0 4px; }
 .dialog input[type=text], .dialog input[type=number] { width: 100%; padding: 7px 10px; border: 1px solid var(--linie-stark); border-radius: 6px; }
 .dialog-knoepfe { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
-.toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: #1f2328; color: #fff; padding: 10px 16px; border-radius: 8px; box-shadow: var(--schatten); z-index: 30; }
+.toast { position: fixed; top: 64px; right: 24px; max-width: 420px; background: #1f2328; color: #fff; padding: 10px 16px; border-radius: 8px; box-shadow: var(--schatten); z-index: 30; }
 .toast.fehler { background: var(--rot); }
 .legende { display: grid; grid-template-columns: 230px 1fr; gap: 8px 12px; align-items: center; }
 ul.einfach { padding-left: 18px; margin: 6px 0; }
 .laedt { opacity: .55; pointer-events: none; transition: opacity .15s; }
+
+.mcode { font-weight: 400; font-size: 11px; color: var(--text-3); margin-left: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.umbenennen { border: none; background: none; color: var(--text-3); cursor: pointer; font-size: 12px; padding: 0 4px; margin-left: 2px; }
+.umbenennen:hover { color: var(--akzent); }
+.karte-frage { background: #fff8e1; color: #7a5a00; font-size: 12px; padding: 6px 12px; border-bottom: 1px solid var(--linie); }
+.frage.hinweis-frage { background: #f3f4f6; }
+.knopf.gefahr { background: var(--rot); border-color: var(--rot); color: #fff; font-weight: 600; }

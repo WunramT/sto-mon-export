@@ -105,6 +105,11 @@ def erstelle_app(eng: Engine) -> FastAPI:
         except Eingabefehler as exc:
             return fehler(exc)
 
+    @app.delete("/api/bestaetigen/{matnr}")
+    def bestaetigung_aufheben(matnr: str):
+        dienst.bestaetigung_aufheben(matnr)
+        return {"ok": True}
+
     @app.get("/api/materialinfo/{matnr}")
     def materialinfo(matnr: str):
         return dienst.material_info(matnr)

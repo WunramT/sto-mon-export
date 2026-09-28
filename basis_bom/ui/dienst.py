@@ -256,6 +256,7 @@ class Dienst:
             kuerzel: Counter = Counter()
             unlesbar: Counter = Counter()
             fehler: dict[str, str] = {}
+            beispiel: dict[str, list[str]] = {}  # "k:ALIAS" bzw. "w:MERKMAL|WERT" → Bedingungsnamen
             pro_stl: dict[str, dict[str, set[str]]] = {}
             for stlnr, pos in self.src.positionen.items():
                 w_hier, k_hier, u_hier = set(), set(), set()
@@ -269,8 +270,16 @@ class Dienst:
                             u_hier.add(bez["knnam"])
                             fehler[bez["knnam"]] = e.fehler
                         for m, w in e.paare:
-                            w_hier |= {(m, t) for t in einzelwerte(negiert(w)[1])}
-                        k_hier |= set(e.unbekannte_aliasse) | set(e.offene_aliasse)
+                            for t in einzelwerte(negiert(w)[1]):
+                                w_hier.add((m, t))
+                                b = beispiel.setdefault(f"w:{m}|{t}", [])
+                                if len(b) < 3 and bez["knnam"] not in b:
+                                    b.append(bez["knnam"])
+                        for k in set(e.unbekannte_aliasse) | set(e.offene_aliasse):
+                            k_hier.add(k)
+                            b = beispiel.setdefault(f"k:{k}", [])
+                            if len(b) < 3 and bez["knnam"] not in b:
+                                b.append(bez["knnam"])
                 werte.update(w_hier)
                 kuerzel.update(k_hier)
                 unlesbar.update(u_hier)
@@ -280,7 +289,7 @@ class Dienst:
                         d.setdefault(m, set()).add(w)
                     pro_stl[stlnr] = d
             a._ui_vorkommen = {"werte": werte, "kuerzel": kuerzel, "unlesbar": unlesbar, "fehler": fehler,
-                               "pro_stl": pro_stl}  # fmt: skip
+                               "pro_stl": pro_stl, "beispiel": beispiel}  # fmt: skip
         return a._ui_vorkommen
 
     def _vorkommen(self, a: Aufloeser) -> tuple[Counter, Counter]:
@@ -339,11 +348,13 @@ class Dienst:
                 typ, text = "merkmal", f"{name}: Welche der Werte {_liste(werte)} sind Basiswerte?"
             else:
                 typ, text = "merkmal", f"{name}: Auf manchen Stücklisten ist keiner der Werte Basis – welcher soll gelten?"
+            bsp = sorted({b for w in werte for b in vk["beispiel"].get(f"w:{m}|{w}", [])})[:3]
             liste.append({"schluessel": f"merkmal:{m}", "typ": typ, "merkmal": m, "name": name, "werte": werte,
-                          "text": text, "stuecklisten": len(stl)})  # fmt: skip
+                          "text": text, "stuecklisten": len(stl), "beispiele": bsp})  # fmt: skip
         for k, n in sorted(vk["kuerzel"].items(), key=lambda x: (-x[1], x[0])):
             liste.append({"schluessel": f"kuerzel:{k}", "typ": "kuerzel", "alias": k,
-                          "text": f"Zu welchem Merkmal gehört das Kürzel „{k}“?", "stuecklisten": n})  # fmt: skip
+                          "text": f"Zu welchem Merkmal gehört das Kürzel „{k}“?", "stuecklisten": n,
+                          "beispiele": vk["beispiel"].get(f"k:{k}", [])})  # fmt: skip
         liste.sort(key=lambda f: -f["stuecklisten"])
         hinweise = [{"schluessel": f"unlesbar:{b}", "typ": "unlesbar", "bedingung": b,
                      "text": f"Die Bedingung „{b}“ {_fehler_text(vk['fehler'][b])} – bitte in SAP umformulieren "
@@ -362,6 +373,9 @@ class Dienst:
             "stichtag": str(s.stichtag), "marker": sorted(s.marker), "warnungen": s.warnungen,
             "regel_version": str(rs.version) if rs.version else None,
             "regeln": len(rs.regeln), "offen": self.offene_fragen(), "namen": self.merkmal_namen(),
+            "merkmale": sorted({m for m, _ in rs.regeln} | {al.merkmal for al in rs.aliasse.values() if al.merkmal}),
+            "kuerzel_beispiele": {k[2:]: v for k, v in self._vk(self.aufloeser())["beispiel"].items()
+                                  if k.startswith("k:")},
         }  # fmt: skip
 
     def _roots(self) -> tuple[list[str], set[str]]:
@@ -468,6 +482,7 @@ class Dienst:
         mat_hinweise = [f for f in im_material.values() if f["typ"] == "unlesbar"]
         return {
             "matnr": matnr, "kurztext": kt.get(matnr, ""), "warnungen": warnungen,
+            "offen": len(global_["fragen"]),
             "fragen": sorted(mat_fragen, key=lambda f: -f["positionen"]),
             "hinweise": sorted(mat_hinweise, key=lambda f: -f["positionen"]),
             "zaehler": dict(Counter(p["status"] for p in positionen)),
@@ -522,11 +537,13 @@ class Dienst:
             e = self._merkmal_eintrag(m, rs, None, namen)
             for w in e["werte"]:
                 w["stuecklisten"] = werte_vk.get((m, w["wert"]), 0)
+                w["beispiele"] = self._vk(a)["beispiel"].get(f"w:{m}|{w['wert']}", [])
             e["frage"] = frage_zu.get(m)
             e["offen"] = 1 if e["frage"] else 0
             eintraege.append(e)
         if nur_offen:
-            eintraege = [e for e in eintraege if e["frage"]]
+            im_entwurf = {r["merkmal"] for r in (entwurf.regeln if entwurf else [])}
+            eintraege = [e for e in eintraege if e["frage"] or e["merkmal"] in im_entwurf]
         eintraege.sort(key=lambda e: (-e["offen"], e["name"].upper()))
         kuerzel = [{"alias": k, "merkmal": None, "status": rules.OFFEN, "stuecklisten": n}
                    for k, n in sorted(kuerzel_vk.items(), key=lambda x: (-x[1], x[0]))]  # fmt: skip
@@ -760,6 +777,10 @@ class Dienst:
                      "l": lauf_id, "t": t, "pf": f"{parent_pfad}/+:{m}", "e": e.get("meins") or "ST"})  # fmt: skip
             con.execute(sa.text("DELETE FROM basis_bom.bestaetigt WHERE root_matnr = :r"), {"r": matnr})
         return {"lauf_id": lauf_id, "urteile": len(urteile), "ergaenzt": len(ergaenzt)}
+
+    def bestaetigung_aufheben(self, matnr: str) -> None:
+        with self.eng.begin() as con:
+            con.execute(sa.text("DELETE FROM basis_bom.bestaetigt WHERE root_matnr = :r"), {"r": matnr.strip().lstrip("0")})
 
     def bestaetigen(self, matnr: str, von: str) -> dict:
         matnr = matnr.strip().lstrip("0")

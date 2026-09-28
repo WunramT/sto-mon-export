@@ -3,6 +3,7 @@
 
 // ------------------------------------------------------------------------------------------------ Hilfen
 const $ = (sel, el = document) => el.querySelector(sel);
+const ersetze = (el, ...kinder) => el.replaceChildren(...kinder.flat().filter((k) => k !== null && k !== undefined && k !== false));
 
 function h(tag, attrs = {}, ...kinder) {
   const el = document.createElement(tag);
@@ -59,7 +60,7 @@ const STATUS = {
   basis: { text: "Basis", kurz: "Basis" },
   unbedingt: { text: "Immer enthalten", kurz: "Immer" },
   manuell_prüfen: { text: "Manuell prüfen", kurz: "Prüfen" },
-  unterhalb_manuell: { text: "Offen (Baugruppe darüber offen)", kurz: "Offen darüber" },
+  unterhalb_manuell: { text: "Wartet auf Baugruppe", kurz: "Wartet" },
   ausgeschlossen: { text: "Nicht in Basis", kurz: "Nicht Basis" },
   ausgeschlossen_vererbt: { text: "Nicht in Basis (Baugruppe)", kurz: "Nicht Basis" },
   ignoriert: { text: "Ignoriert (Text)", kurz: "Ignoriert" },
@@ -67,10 +68,10 @@ const STATUS = {
 const IM_ERGEBNIS = new Set(["basis", "unbedingt"]);
 const OFFEN_STATUS = new Set(["manuell_prüfen", "unterhalb_manuell"]);
 const RAUS = new Set(["ausgeschlossen", "ausgeschlossen_vererbt", "ignoriert"]);
-const REGEL_STATUS = { BASIS: "Basis", OFFEN: "Offen", NICHT_BASIS: "Nie Basis" };
+const REGEL_STATUS = { BASIS: "Basis", OFFEN: "Unentschieden", NICHT_BASIS: "Nie Basis" };
 const POSTP = { L: "Lagerposition", N: "Nichtlagerposition", K: "Klassenposition", T: "Textposition", D: "Dokument", R: "Rohmaterial" };
 const mName = (m) => S.meta?.namen?.[m] || m;
-const ZUSTAND = { offen: "Offen", in_arbeit: "In Arbeit", bestaetigt: "Bestätigt", nicht_aufloesbar: "Nicht auflösbar" };
+const ZUSTAND = { offen: "Zu prüfen", in_arbeit: "In Arbeit", bestaetigt: "Bestätigt", nicht_aufloesbar: "Nicht auflösbar" };
 
 function statusPill(status, vorher) {
   return h("span", {},
@@ -138,11 +139,19 @@ async function ladeBasisRegeln() {
   for (const k of d.kuerzel) S.basisAliasse[k.alias] = { merkmal: k.merkmal, status: k.status };
 }
 
+function zeigeOffen(mitEntwurf) {
+  const m = S.meta;
+  if (!m) return;
+  const basis = m.offen ? `${m.offen} offene Regelfrage${m.offen === 1 ? "" : "n"}` : "keine offenen Regelfragen";
+  const entwurf = !entwurfLeer() && mitEntwurf !== undefined && mitEntwurf !== m.offen ? ` · mit Ihrem Entwurf: ${mitEntwurf}` : "";
+  $("#meta").textContent = `Datenstand ${new Date(m.stichtag).toLocaleDateString("de-DE")} · ${basis}${entwurf}`;
+  $("#offen-zahl").textContent = (entwurf ? mitEntwurf : m.offen) || "";
+}
+
 async function ladeMeta() {
   S.meta = await api("GET", "/api/meta");
   const m = S.meta;
-  $("#meta").textContent = `Datenstand ${new Date(m.stichtag).toLocaleDateString("de-DE")} · ${m.offen ? `${m.offen} offene Regelfragen` : "keine offenen Regelfragen"}`;
-  $("#offen-zahl").textContent = m.offen || "";
+  zeigeOffen(S.daten?.offen);
 }
 
 async function ladeMaterialien() {
@@ -167,6 +176,7 @@ async function ladeMaterial(matnr, { behalteAuswahl = false } = {}) {
     const d = await api("POST", `/api/material/${matnr}`, { entwurf: entwurfPayload() });
     S.daten = d;
     for (const m of d.merkmale) S.merkmale[m.merkmal] = m;
+    zeigeOffen(d.offen);
     if (neu) {
       S.zu = new Set(d.positionen.filter((p) => p.hat_kinder && RAUS.has(p.status)).map((p) => p.id));
       S.filter = "alle";
@@ -248,12 +258,12 @@ function setzeKuerzel(alias, merkmal, status) {
 }
 
 function regelStatusText(status, rang, systemregel) {
-  if (systemregel) return { BASIS: "Gilt", OFFEN: "Offen", NICHT_BASIS: "Gilt nicht" }[status];
+  if (systemregel) return { BASIS: "Gilt", OFFEN: "Unentschieden", NICHT_BASIS: "Gilt nicht" }[status];
   return status === "BASIS" ? `Basis (Rang ${rang})` : REGEL_STATUS[status];
 }
 
 function entwurfEintragText(e) {
-  if (e.alias) return `Kürzel ${e.alias} → ${e.merkmal || "–"}`;
+  if (e.alias) return `Kürzel ${e.alias} → ${e.merkmal ? mName(e.merkmal) : "–"}`;
   const sys = e.wert === "vorhanden";
   const w = sys ? "" : ` = ${e.wert}`;
   return `${mName(e.merkmal)}${w}: ${regelStatusText(e.vorher.status, e.vorher.rang, sys)} → ${regelStatusText(e.status, e.rang, sys)}`;
@@ -269,29 +279,33 @@ function merkmalKarte(m, { hierWerte = null, gewaehlt, hervor = false } = {}) {
     h("div", { class: "merkmal-kopf" },
       h("div", {}, h("div", { class: "mname" }, mName(m.merkmal),
         mName(m.merkmal) !== m.merkmal ? h("span", { class: "mcode" }, m.merkmal) : null,
-        h("button", { type: "button", class: "umbenennen", title: "Anzeigenamen ändern", "aria-label": `Anzeigenamen für ${m.merkmal} ändern`,
-          onclick: (ev) => { ev.stopPropagation(); namenDialog(m.merkmal); } }, "✎")),
+        h("button", { type: "button", class: "umbenennen", title: "Anzeigenamen ändern (so heißt das Merkmal in dieser Oberfläche)", "aria-label": `Anzeigenamen für ${m.merkmal} ändern`,
+          onclick: (ev) => { ev.stopPropagation(); namenDialog(m.merkmal); } }, "✎ Name")),
         h("div", { class: "art" }, art)),
       gewaehlt !== undefined ? h("span", { class: "status " + (gewaehlt ? "s-basis" : "s-manuell_prüfen") },
         m.systemregel ? (gewaehlt ? "hier: gilt" : "hier: noch offen")
           : gewaehlt ? `hier gewählt: ${gewaehlt}` : "hier: noch kein Basiswert") : null),
-    m.frage ? h("div", { class: "karte-frage" }, m.frage.text) : null);
+    m.frage ? h("div", { class: "karte-frage" }, m.frage.text,
+      m.frage.beispiele?.length ? h("span", { class: "bsp" }, ` · z. B. in Bedingung ${m.frage.beispiele.map((b) => `„${b}“`).join(", ")}`) : null) : null);
   const werte = [...m.werte];
   if (hierWerte) werte.sort((a, b) => (hierWerte.has(b.wert) - hierWerte.has(a.wert)));
   for (const w of werte) {
     const i = basisWerte.findIndex((x) => x.wert === w.wert);
     const knoepfe = m.systemregel
-      ? [["BASIS", "Gilt", "b"], ["OFFEN", "Offen", "o"], ["NICHT_BASIS", "Gilt nicht", "n"]]
+      ? [["BASIS", "Gilt", "b"], ["OFFEN", "Unentschieden", "o"], ["NICHT_BASIS", "Gilt nicht", "n"]]
       : m.sitzhoehe
         ? [["OFFEN", "Erlaubt", "o"], ["NICHT_BASIS", "Nie Basis", "n"]]
-        : [["BASIS", "Basis", "b"], ["OFFEN", "Offen", "o"], ["NICHT_BASIS", "Nie Basis", "n"]];
+        : [["BASIS", "Basis", "b"], ["OFFEN", "Unentschieden", "o"], ["NICHT_BASIS", "Nie Basis", "n"]];
     const hier = hierWerte && hierWerte.has(w.wert);
-    karte.append(h("div", { class: "wert-zeile" + (imEntwurf(w.wert) ? " im-entwurf" : "") },
+    const unbenutzt = !hierWerte && w.stuecklisten === 0;
+    karte.append(h("div", { class: "wert-zeile" + (imEntwurf(w.wert) ? " im-entwurf" : "") + (unbenutzt ? " unbenutzt" : ""),
+      title: w.beispiele?.length ? `Kommt vor in: ${w.beispiele.join(", ")}` : unbenutzt ? "Kommt in keiner Stückliste vor – keine Entscheidung nötig" : null },
       h("div", { class: "rang" + (w.status === "BASIS" ? "" : " kein"), title: w.status === "BASIS" && !m.systemregel ? `Rang ${w.rang}` : "" },
         w.status === "BASIS" && !m.sitzhoehe && !m.systemregel ? w.rang : m.systemregel ? "" : "–"),
       h("div", { class: "wname" }, m.systemregel ? "In der Basis:" : w.wert,
         hier ? h("small", {}, gewaehlt === w.wert ? "★ hier gewählt" : "kommt hier vor")
           : w.stuecklisten ? h("small", {}, `in ${w.stuecklisten} Stückliste${w.stuecklisten === 1 ? "" : "n"}`)
+          : unbenutzt ? h("small", {}, "in keiner Stückliste")
             : w.vorkommen ? h("small", {}, "kommt im Material vor") : null),
       h("div", { class: "status-wahl", role: "group", "aria-label": `Status für ${m.merkmal} ${w.wert}` },
         knoepfe.map(([st, text, cls]) => h("button", {
@@ -313,7 +327,7 @@ function zeichneEntwurf() {
   $("#entwurf-leiste").hidden = n === 0;
   $("#entwurf-text").textContent = n === 1 ? "1 Änderung" : `${n} Änderungen`;
   const box = $("#entwurf-aenderungen");
-  box.replaceChildren(...[...Object.values(S.entwurf.regeln), ...Object.values(S.entwurf.aliasse)].map((e) =>
+  ersetze(box, ...[...Object.values(S.entwurf.regeln), ...Object.values(S.entwurf.aliasse)].map((e) =>
     h("span", { class: "chip" }, entwurfEintragText(e),
       h("button", { type: "button", title: "Diese Änderung zurücknehmen", "aria-label": "zurücknehmen", onclick: () => {
         if (e.alias) delete S.entwurf.aliasse[e.alias]; else delete S.entwurf.regeln[`${e.merkmal}|${e.wert}`];
@@ -326,12 +340,12 @@ function zeichneMaterialliste() {
   const q = $("#material-suche").value.trim().toUpperCase();
   const zaehler = { alle: S.materialien.length };
   for (const m of S.materialien) zaehler[m.zustand] = (zaehler[m.zustand] || 0) + 1;
-  $("#zustand-filter").replaceChildren(...["alle", "offen", "in_arbeit", "bestaetigt", "nicht_aufloesbar"].filter((z) => z === "alle" || zaehler[z]).map((z) =>
+  ersetze($("#zustand-filter"), ...["alle", "offen", "in_arbeit", "bestaetigt", "nicht_aufloesbar"].filter((z) => z === "alle" || zaehler[z]).map((z) =>
     h("button", { type: "button", class: "filter-knopf" + (S.zustandFilter === z ? " aktiv" : ""), onclick: () => { S.zustandFilter = z; zeichneMaterialliste(); } },
       `${z === "alle" ? "Alle" : ZUSTAND[z]} ${zaehler[z] || 0}`)));
   const liste = S.materialien.filter((m) => (S.zustandFilter === "alle" || m.zustand === S.zustandFilter) &&
     (!q || m.matnr.includes(q) || (m.kurztext || "").toUpperCase().includes(q)));
-  $("#materialliste").replaceChildren(...(liste.length ? liste.map((m) =>
+  ersetze($("#materialliste"), ...(liste.length ? liste.map((m) =>
     h("li", {}, h("button", { type: "button", class: "material" + (m.matnr === S.matnr ? " aktiv" : ""), onclick: () => oeffneMaterial(m.matnr) },
       h("span", { class: `zustand ${m.zustand}` }, ZUSTAND[m.zustand]),
       h("span", { class: "nr" }, m.matnr),
@@ -421,11 +435,11 @@ function zeichneStueckliste() {
   const box = $("#ansicht-stueckliste");
   const d = S.daten;
   if (!d) {
-    box.replaceChildren(h("div", { class: "leer-hinweis" }, "Links ein Material wählen."));
+    ersetze(box, h("div", { class: "leer-hinweis" }, "Links ein Material wählen."));
     return;
   }
   if (d.fehler) {
-    box.replaceChildren(h("div", { class: "leer-hinweis" }, h("strong", {}, d.matnr), h("p", {}, d.fehler)));
+    ersetze(box, h("div", { class: "leer-hinweis" }, h("strong", {}, d.matnr), h("p", {}, d.fehler)));
     return;
   }
   const z = d.zaehler;
@@ -435,9 +449,10 @@ function zeichneStueckliste() {
     h("div", { class: "wert" }, wert), h("div", { class: "name" }, name));
   const kopf = h("div", { class: "mat-kopf" },
     h("div", { class: "mat-titel" }, h("h1", {}, d.matnr, h("small", {}, d.kurztext)),
-      d.review?.bestaetigt ? h("span", { class: "status s-basis" }, `✓ Bestätigt von ${d.review.bestaetigt.von} am ${new Date(d.review.bestaetigt.datum).toLocaleDateString("de-DE")}`) : null),
+      d.review?.bestaetigt ? h("span", { class: "status s-basis" }, `✓ Bestätigt von ${d.review.bestaetigt.von} am ${new Date(d.review.bestaetigt.datum).toLocaleDateString("de-DE")}`,
+        h("button", { type: "button", class: "link-knopf", title: "Bestätigung zurücknehmen", onclick: bestaetigungAufheben }, "aufheben")) : null),
     h("div", { class: "kennzahlen" },
-      kennzahl("basis", n("basis", "unbedingt"), "in der Basis-Stückliste", "ergebnis", "Nur Positionen zeigen, die in die Basis-Stückliste kommen"),
+      kennzahl("basis", n("basis", "unbedingt") + (rs.ergaenzt ? ` + ${rs.ergaenzt}` : ""), rs.ergaenzt ? "in der Basis-Stückliste (+ ergänzt)" : "in der Basis-Stückliste", "ergebnis", "Nur Positionen zeigen, die in die Basis-Stückliste kommen"),
       kennzahl("manuell", n("manuell_prüfen", "unterhalb_manuell"), "offen – manuell prüfen", "offen", "Nur offene Positionen zeigen"),
       kennzahl("aus", n("ausgeschlossen", "ausgeschlossen_vererbt", "ignoriert"), "nicht in der Basis", "alle", "Alle zeigen"),
       !entwurfLeer() ? kennzahl("entwurf", d.geaendert, "durch Entwurf geändert", "geaendert", "Nur durch den Entwurf geänderte Positionen zeigen") : null),
@@ -467,7 +482,7 @@ function zeichneStueckliste() {
     !entwurfLeer() ? h("div", { class: "hinweis" }, "Sie sehen die Vorschau Ihres Entwurfs. Bewerten ist erst nach „Übernehmen“ oder „Verwerfen“ möglich.") : null,
     d.review?.veraltet ? h("div", { class: "hinweis" }, `Seit der letzten Bewertung haben sich Regeln geändert: ${d.review.veraltet} Positionen haben jetzt einen anderen Status. Bitte diese Zeilen neu bewerten.`) : null,
     d.warnungen?.length ? h("div", { class: "hinweis info" }, d.warnungen.join(" · ")) : null);
-  box.replaceChildren(kopf, h("div", { class: "baum", id: "baum" }));
+  ersetze(box, kopf, h("div", { class: "baum", id: "baum" }));
   zeichneBaum();
 }
 
@@ -508,7 +523,7 @@ function zeichneBaum() {
         if (e.lokal) S.lokalErgaenzt.splice(e.index, 1); else S.entfernt.push(e.pfad);
         speichereLokal(); zeichneStueckliste();
       } }, "Entfernen"))))] : [];
-  baum.replaceChildren(h("div", { class: "baum-kopf", role: "presentation" }, h("div", {}, "Position · Material"), h("div", { style: "text-align:right" }, "Menge gesamt"), h("div", {}, "Status"), h("div", { style: "text-align:right" }, "Bewertung")),
+  ersetze(baum, h("div", { class: "baum-kopf", role: "presentation" }, h("div", {}, "Position · Material"), h("div", { style: "text-align:right" }, "Menge gesamt"), h("div", {}, "Status"), h("div", { style: "text-align:right" }, "Bewertung")),
     ...(zeilen.length ? zeilen : [h("div", { class: "leer-hinweis" }, "Keine Positionen für diesen Filter.")]), ...zusatz);
   baum.setAttribute("role", "tree");
 }
@@ -559,8 +574,22 @@ async function speichereReview() {
   } catch (e) { toast(e.message, true); }
 }
 
+async function bestaetigungAufheben() {
+  try {
+    await api("DELETE", `/api/bestaetigen/${S.daten.matnr}`);
+    toast("Bestätigung zurückgenommen.");
+    await Promise.all([ladeMaterial(S.daten.matnr, { behalteAuswahl: true }), ladeMaterialien()]);
+  } catch (e) { toast(e.message, true); }
+}
+
 async function bestaetige() {
   if (!(await brauchtName())) return;
+  const ja = await new Promise((ok) => dialog(`Material ${S.daten.matnr} bestätigen?`,
+    [h("p", {}, "Damit bestätigen Sie, dass die Basis-Stückliste so richtig ist. Sie dient danach als Referenz: ändert eine spätere Regeländerung dieses Material, wird das gemeldet."),
+      h("p", { class: "unter" }, "Die Bestätigung lässt sich jederzeit wieder aufheben.")],
+    [h("button", { type: "button", class: "knopf", onclick: () => { schliesseDialog(); ok(false); } }, "Abbrechen"),
+      h("button", { type: "button", class: "knopf haupt", onclick: () => { schliesseDialog(); ok(true); } }, "Bestätigen")]));
+  if (!ja) return;
   try {
     await api("POST", `/api/bestaetigen/${S.daten.matnr}`, { von: S.name });
     toast("Material bestätigt – es dient ab jetzt als Referenz für spätere Läufe.");
@@ -572,11 +601,11 @@ async function bestaetige() {
 function zeichneDetails() {
   const box = $("#details");
   const d = S.daten;
-  if (S.ansicht === "regeln") { box.replaceChildren(regelUebersichtRechts()); return; }
-  if (S.ansicht === "auswirkung") { box.replaceChildren(auswirkungRechts()); return; }
-  if (!d || d.fehler) { box.replaceChildren(h("div", { class: "details" }, h("p", { class: "unter" }, "Hier erscheinen Details zur gewählten Position."))); return; }
+  if (S.ansicht === "regeln") { ersetze(box, regelUebersichtRechts()); return; }
+  if (S.ansicht === "auswirkung") { ersetze(box, auswirkungRechts()); return; }
+  if (!d || d.fehler) { ersetze(box, h("div", { class: "details" }, h("p", { class: "unter" }, "Hier erscheinen Details zur gewählten Position."))); return; }
   const p = d.positionen.find((x) => x.id === S.auswahl);
-  if (!p) { box.replaceChildren(materialUebersicht()); return; }
+  if (!p) { ersetze(box, materialUebersicht()); return; }
   const u = urteilVon(p.id);
   const ebene = d.ebenen[p.stlnr];
   const merkmaleHier = [...new Set(p.bedingungen.flatMap((b) => b.pruefungen.map((x) => x.merkmal)))];
@@ -612,10 +641,11 @@ function zeichneDetails() {
     h("div", { class: "abschnitt" }, h("h3", {}, "Daten"),
       h("dl", { class: "kv" },
         h("dt", {}, "Menge je Baugruppe"), h("dd", {}, fmtMenge(p.menge, p.meins)),
-        h("dt", {}, "Menge gesamt"), h("dd", {}, fmtMenge(p.menge_kum, p.meins), h("small", { style: "color:var(--text-3);display:block" }, "bezogen auf 1 Stück des Materials")),
+        h("dt", {}, "Menge gesamt"), h("dd", {}, fmtMenge(p.menge_kum, p.meins), h("small", { style: "color:var(--text-3);display:block" },
+          p.menge && p.menge_kum !== p.menge ? `= ${zahlFormat.format(p.menge)} × ${zahlFormat.format(p.menge_kum / p.menge)} (Mengen der Baugruppen darüber), bezogen auf 1 Stück ${d.matnr}` : `bezogen auf 1 Stück ${d.matnr}`)),
         h("dt", {}, "Stückliste"), h("dd", {}, p.stlnr),
         h("dt", {}, "Positionstyp"), h("dd", {}, POSTP[p.postp] ? `${POSTP[p.postp]} (${p.postp})` : p.postp || "–"))));
-  box.replaceChildren(inhalt);
+  ersetze(box, inhalt);
   if (S.fokusMerkmal) { const k = box.querySelector(`[data-merkmal="${CSS.escape(S.fokusMerkmal)}"]`); if (k) k.scrollIntoView({ block: "center" }); }
 }
 
@@ -736,7 +766,7 @@ function auswirkungRechts() {
 async function ladeRegelAnsicht() {
   const d = await api("POST", `/api/regeln?q=${encodeURIComponent(S.regelnQ)}&nur_offen=${S.regelnNurOffen}`, { entwurf: entwurfPayload() });
   S.regelDaten = d;
-  $("#offen-zahl").textContent = d.offen || "";
+  zeigeOffen(d.offen);
   if (S.ansicht === "regeln") zeichneDetails();
   for (const m of d.merkmale) if (!S.merkmale[m.merkmal] || !S.daten?.merkmale?.some((x) => x.merkmal === m.merkmal)) S.merkmale[m.merkmal] = m;
   zeichneRegeln();
@@ -747,11 +777,11 @@ function zeichneRegeln() {
   const d = S.regelDaten;
   let merkmale = d ? d.merkmale : [];
   if (S.regelnNurMaterial && S.daten?.merkmale) { const hier = new Set(S.daten.merkmale.map((m) => m.merkmal)); merkmale = merkmale.filter((m) => hier.has(m.merkmal)); }
-  box.replaceChildren(
+  ersetze(box, 
     h("div", { class: "regel-werkzeuge" },
       h("input", { class: "baum-suche", type: "search", placeholder: "Merkmal suchen", value: S.regelnQ, style: "width:200px",
         oninput: (ev) => { S.regelnQ = ev.target.value; clearTimeout(zeichneRegeln._t); zeichneRegeln._t = setTimeout(ladeRegelAnsicht, 200); } }),
-      h("label", {}, h("input", { type: "checkbox", checked: S.regelnNurOffen, onchange: (ev) => { S.regelnNurOffen = ev.target.checked; ladeRegelAnsicht(); } }), " nur Merkmale mit offenen Werten"),
+      h("label", {}, h("input", { type: "checkbox", checked: S.regelnNurOffen, onchange: (ev) => { S.regelnNurOffen = ev.target.checked; ladeRegelAnsicht(); } }), " nur Merkmale mit offenen Fragen"),
       S.daten?.merkmale ? h("label", {}, h("input", { type: "checkbox", checked: S.regelnNurMaterial, onchange: (ev) => { S.regelnNurMaterial = ev.target.checked; zeichneRegeln(); } }), ` nur Merkmale aus ${S.daten.matnr}`) : null,
       h("span", { class: "unter", style: "margin-left:auto;color:var(--text-2)" }, S.regelnNurOffen
         ? `${d?.offen || 0} offene Regelfrage${d?.offen === 1 ? "" : "n"}: ${merkmale.length} Merkmal${merkmale.length === 1 ? "" : "e"}, ${d?.kuerzel?.length || 0} Kürzel`
@@ -762,13 +792,13 @@ function zeichneRegeln() {
         h("span", { style: "color:var(--text-2)" }, `in ${k.stuecklisten} Stückliste${k.stuecklisten === 1 ? "" : "n"}`),
         h("button", { type: "button", class: "knopf klein", onclick: () => kuerzelDialog(k.alias) }, "Zuordnen"))))) : null,
     merkmale.length ? h("div", { class: "regel-liste" }, ...merkmale.map((m) => merkmalKarte(m, { hervor: S.fokusMerkmal === m.merkmal })))
-      : h("div", { class: "leer-hinweis" }, S.regelnNurOffen ? "Keine Merkmale mit offenen Werten – Häkchen oben entfernen, um alle zu sehen." : "Keine Merkmale gefunden."));
+      : h("div", { class: "leer-hinweis" }, S.regelnNurOffen ? "Keine Merkmale mit offenen Fragen – Häkchen oben entfernen, um alle zu sehen." : "Keine Merkmale gefunden."));
 }
 
 // ------------------------------------------------------------------------------------------------ Auswirkung
 async function berechneAuswirkung() {
   const box = $("#ansicht-auswirkung");
-  box.replaceChildren(h("div", { class: "leer-hinweis" }, "Rechne alle betroffenen Materialien neu …"));
+  ersetze(box, h("div", { class: "leer-hinweis" }, "Rechne alle betroffenen Materialien neu …"));
   try {
     S.auswirkung = await api("POST", "/api/auswirkung", { entwurf: entwurfPayload() });
   } catch (e) { S.auswirkung = { fehler: e.message }; }
@@ -778,13 +808,13 @@ async function berechneAuswirkung() {
 function zeichneAuswirkung() {
   const box = $("#ansicht-auswirkung");
   if (entwurfLeer()) {
-    box.replaceChildren(h("div", { class: "leer-hinweis" }, h("p", {}, "Kein Entwurf offen."), h("p", {}, "Ändern Sie eine Regel (Status oder Rang) – hier sehen Sie dann, welche Materialien sich dadurch ändern.")));
+    ersetze(box, h("div", { class: "leer-hinweis" }, h("p", {}, "Kein Entwurf offen."), h("p", {}, "Ändern Sie eine Regel (Status oder Rang) – hier sehen Sie dann, welche Materialien sich dadurch ändern.")));
     return;
   }
   if (!S.auswirkung) { berechneAuswirkung(); return; }
   const a = S.auswirkung;
-  if (a.fehler) { box.replaceChildren(h("div", { class: "leer-hinweis" }, a.fehler)); return; }
-  box.replaceChildren(
+  if (a.fehler) { ersetze(box, h("div", { class: "leer-hinweis" }, a.fehler)); return; }
+  ersetze(box, 
     h("div", { style: "padding:16px 18px" },
       h("h2", { style: "margin:0 0 4px;font-size:16px" }, a.betroffen ? `Ihr Entwurf ändert ${a.betroffen} Material${a.betroffen === 1 ? "" : "ien"}` : "Ihr Entwurf ändert keine Stückliste"),
       h("p", { class: "unter", style: "color:var(--text-2);margin:0" }, `${a.geprueft} Materialien enthalten die geänderten Merkmale und wurden neu gerechnet.`),
@@ -801,8 +831,8 @@ function zeichneAuswirkung() {
 // ------------------------------------------------------------------------------------------------ Dialoge
 function dialog(titel, inhalt, knoepfe) {
   $("#dialog-titel").textContent = titel;
-  $("#dialog-inhalt").replaceChildren(...[inhalt].flat());
-  $("#dialog-knoepfe").replaceChildren(...knoepfe);
+  ersetze($("#dialog-inhalt"), ...[inhalt].flat());
+  ersetze($("#dialog-knoepfe"), ...knoepfe);
   $("#dialog").hidden = false;
   const erstes = $("#dialog").querySelector("input, textarea, button.haupt");
   if (erstes) erstes.focus();
@@ -848,13 +878,40 @@ function namenDialog(merkmal) {
 }
 
 function kuerzelDialog(alias) {
-  const bekannte = [...new Set([...Object.keys(S.merkmale), ...Object.keys(S.basisRegeln).map((k) => k.split("|")[0])])].sort();
+  const bekannte = [...new Set([...(S.meta?.merkmale || []), ...Object.keys(S.merkmale), ...Object.keys(S.basisRegeln).map((k) => k.split("|")[0])])].sort();
   const liste = h("datalist", { id: "merkmal-liste" }, ...bekannte.map((m) => h("option", { value: m, label: mName(m) !== m ? mName(m) : null })));
-  const eingabe = h("input", { type: "text", list: "merkmal-liste", placeholder: "Merkmalname laut SAP, z. B. SITZQUALI", "aria-label": "Merkmal" });
-  dialog(`Kürzel „${alias}“ zuordnen`, [h("p", {}, "Zu welchem Merkmal gehört dieses Kürzel in den Bedingungsnamen?"), eingabe, liste,
+  const eingabe = h("input", { type: "text", list: "merkmal-liste", placeholder: "Merkmal wählen oder SAP-Namen eintippen", "aria-label": "Merkmal" });
+  const info = h("div", { class: "feld-info" }, " ");
+  const bsp = S.meta?.kuerzel_beispiele?.[alias] || [];
+  let bestaetigtNeu = "";
+  eingabe.addEventListener("input", () => {
+    const m = eingabe.value.trim().toUpperCase();
+    info.className = "feld-info";
+    info.textContent = !m ? " " : bekannte.includes(m) ? `✓ ${mName(m)}` : `„${m}“ ist bisher kein bekanntes Merkmal – beim Zuordnen wird es neu angelegt.`;
+    if (m && !bekannte.includes(m)) info.className = "feld-info warn";
+  });
+  const ok = () => {
+    const m = eingabe.value.trim().toUpperCase();
+    if (!m) { info.textContent = "Bitte ein Merkmal wählen."; info.className = "feld-info warn"; return; }
+    if (!bekannte.includes(m) && bestaetigtNeu !== m) {
+      bestaetigtNeu = m;
+      info.textContent = `„${m}“ ist neu. Nochmal auf „Zuordnen“ klicken, um das Merkmal anzulegen.`;
+      info.className = "feld-info warn";
+      return;
+    }
+    setzeKuerzel(alias, m, "BASIS");
+    schliesseDialog();
+    toast(`Kürzel ${alias} → ${mName(m)} im Entwurf.`);
+  };
+  eingabe.addEventListener("keydown", (ev) => { if (ev.key === "Enter") ok(); });
+  dialog(`Kürzel „${alias}“ zuordnen`, [
+    h("p", {}, "Zu welchem Merkmal gehört dieses Kürzel in den Bedingungsnamen?"),
+    bsp.length ? h("p", { class: "unter" }, "Kommt vor in: ", ...bsp.map((b, i) => [i ? ", " : "", h("code", {}, b)])) : null,
+    bsp.length ? h("p", { class: "unter" }, `Der Teil nach dem Kürzel ist der Wert (z. B. „${bsp[0].slice(alias.length) || "…"}“).`) : null,
+    eingabe, liste, info,
     h("p", { class: "unter", style: "color:var(--text-2)" }, "Die Zuordnung landet im Entwurf – der Baum zeigt sofort, was sich ändert.")],
   [h("button", { type: "button", class: "knopf", onclick: schliesseDialog }, "Abbrechen"),
-    h("button", { type: "button", class: "knopf haupt", onclick: () => { const m = eingabe.value.trim().toUpperCase(); if (!m) { toast("Bitte ein Merkmal eintragen.", true); return; } setzeKuerzel(alias, m, "BASIS"); schliesseDialog(); } }, "Zuordnen")]);
+    h("button", { type: "button", class: "knopf haupt", onclick: ok }, "Zuordnen")]);
 }
 
 async function uebernehmenDialog() {
@@ -914,10 +971,12 @@ function hilfeDialog() {
     unterhalb_manuell: "Die übergeordnete Baugruppe ist noch offen.",
     ausgeschlossen: "Passt nicht zu den Basiswerten – kommt nicht in die Basis-Stückliste.",
     ausgeschlossen_vererbt: "Die übergeordnete Baugruppe ist nicht in der Basis.",
+    ignoriert: "Text- oder Dokumentposition – gehört nie zur Stückliste.",
   }[st])];
   dialog("So funktioniert die Basis-Stückliste", [
     h("p", {}, "Für jedes Merkmal (z. B. Sitzqualität) legt der Fachbereich fest, welche Werte zur Basis gehören und in welcher Rangfolge. Kommen auf einer Stückliste mehrere Basiswerte vor, gewinnt der mit dem kleinsten Rang."),
-    h("div", { class: "legende" }, ...["basis", "unbedingt", "manuell_prüfen", "unterhalb_manuell", "ausgeschlossen", "ausgeschlossen_vererbt"].flatMap(zeile)),
+    h("div", { class: "legende" }, ...["basis", "unbedingt", "manuell_prüfen", "unterhalb_manuell", "ausgeschlossen", "ausgeschlossen_vererbt", "ignoriert"].flatMap(zeile)),
+    h("p", { class: "unter" }, "Regelwerte: „Basis“ = gehört zur Basis (Rang 1 gewinnt), „Nie Basis“ = nie, „Unentschieden“ = noch keine Entscheidung. Werte, die in keiner Stückliste vorkommen, sind ausgegraut und brauchen keine Entscheidung."),
     h("h3", { style: "font-size:14px;margin-top:16px" }, "Ablauf"),
     h("ol", { class: "einfach" },
       h("li", {}, "Material wählen, offene Fragen rechts klären – jede Regeländerung ist zunächst ein Entwurf nur für Sie."),

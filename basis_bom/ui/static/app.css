@@ -243,7 +243,7 @@ textarea { width: 100%; min-height: 60px; border: 1px solid var(--linie-stark); 
 .dialog label { display: block; font-weight: 600; margin: 12px 0 4px; }
 .dialog input[type=text], .dialog input[type=number] { width: 100%; padding: 7px 10px; border: 1px solid var(--linie-stark); border-radius: 6px; }
 .dialog-knoepfe { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
-.toast { position: fixed; top: 64px; right: 24px; max-width: 420px; background: #1f2328; color: #fff; padding: 10px 16px; border-radius: 8px; box-shadow: var(--schatten); z-index: 30; }
+.toast { position: fixed; bottom: 22px; right: 24px; max-width: 420px; background: #1f2328; color: #fff; padding: 10px 16px; border-radius: 8px; box-shadow: var(--schatten); z-index: 30; }
 .toast.fehler { background: var(--rot); }
 .legende { display: grid; grid-template-columns: 230px 1fr; gap: 8px 12px; align-items: center; }
 ul.einfach { padding-left: 18px; margin: 6px 0; }
@@ -255,3 +255,9 @@ ul.einfach { padding-left: 18px; margin: 6px 0; }
 .karte-frage { background: #fff8e1; color: #7a5a00; font-size: 12px; padding: 6px 12px; border-bottom: 1px solid var(--linie); }
 .frage.hinweis-frage { background: #f3f4f6; }
 .knopf.gefahr { background: var(--rot); border-color: var(--rot); color: #fff; font-weight: 600; }
+.wert-zeile.unbenutzt { opacity: .55; }
+.wert-zeile.unbenutzt .status-wahl button.an.o { background: #e6e8eb; color: var(--text-2); }
+.karte-frage .bsp { color: #9a7b1c; }
+.link-knopf { border: none; background: none; color: inherit; text-decoration: underline; cursor: pointer; font-size: 11px; margin-left: 8px; padding: 0; }
+.dialog code { background: var(--hg); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+.zustand-filter { gap: 4px; }

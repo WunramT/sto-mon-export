@@ -21,7 +21,13 @@
       </div>
     </div>
     <div class="menge mono">{{ fmtMenge(p.menge_kum, p.meins) }}</div>
-    <div><StatusPille :status="p.status" :vorher="p.vorher" :manuell="a.manuell(p)" /></div>
+    <div class="status-zelle">
+      <span v-if="unterRaus && (OFFEN_STATUS.has(p.status) || IM_ERGEBNIS.has(p.status))" class="st st-ausgeschlossen_vererbt" title="Die Baugruppe darüber kommt nicht in die Basis (Regel oder manuelle Entscheidung) – diese Position damit auch nicht.">
+        <span class="pkt" />Nicht Basis (Bgr.)
+      </span>
+      <StatusPille v-else :status="p.status" :vorher="p.vorher" :manuell="a.manuell(p)" />
+      <v-icon v-if="unterRaus && a.manuell(p) === 'rein'" icon="mdi-alert" size="15" color="warning" class="ml-1" title="Widerspruch: „Sollte rein“, aber die Baugruppe darüber ist nicht in der Basis" />
+    </div>
     <BewertungKnoepfe :p="p" im-baum />
   </div>
 </template>
@@ -31,11 +37,12 @@ import { computed } from 'vue'
 import { useArbeit } from '@/stores/arbeit'
 import StatusPille from '@/components/StatusPille.vue'
 import BewertungKnoepfe from '@/components/BewertungKnoepfe.vue'
-import { RAUS, STATUS, fmtMenge } from '@/utils/texte'
+import { IM_ERGEBNIS, OFFEN_STATUS, RAUS, STATUS, fmtMenge } from '@/utils/texte'
 
 const props = defineProps<{ p: any; kontext?: boolean }>()
 const a = useArbeit()
 const urteil = computed(() => a.urteilVon(props.p.id))
+const unterRaus = computed(() => a.unterRaus(props.p.id))
 
 function waehle() {
   a.auswahl = props.p.id

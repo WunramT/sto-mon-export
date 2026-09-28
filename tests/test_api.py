@@ -245,11 +245,24 @@ def test_bestaetigt_veraltet_und_auswirkung(client, regeln_sichern):
     zustand = {m["matnr"]: m["zustand"] for m in client.get("/api/materialien").json()}
     assert zustand["90000005"] == "bestaetigt"
     a = client.post("/api/auswirkung", json={"entwurf": FK_BASIS}).json()
-    assert a["bestaetigt"] >= 1 and a["materialien"][0]["bestaetigt"] is True
+    m5 = next(m for m in a["materialien"] if m["matnr"] == "90000005")
+    assert m5["bestaetigt"] is True and m5["bestaetigt_betroffen"] is False
     r = client.post("/api/uebernehmen", json={"entwurf": FK_BASIS, "von": "T", "begruendung": "FK wird Basis"})
     assert r.status_code == 200
+    # FK=Basis macht 10000102 regelbasiert zu „Basis“ – das war manuell schon „rein“: Export unverändert → aktuell
+    zustand = {m["matnr"]: m["zustand"] for m in client.get("/api/materialien").json()}
+    assert zustand["90000005"] == "bestaetigt"
+    # Regel, die den Export ändert (HR nie Basis) → veraltet
+    hr = {"regeln": [{"merkmal": "SITZQUALI", "wert": "HR", "status": "NICHT_BASIS", "rang": None,
+                      "vorher": {"status": "BASIS", "rang": 1}},
+                     {"merkmal": "SITZQUALI", "wert": "FK", "status": "BASIS", "rang": 1,
+                      "vorher": {"status": "BASIS", "rang": 2}}]}  # fmt: skip
+    a2 = client.post("/api/auswirkung", json={"entwurf": hr}).json()
+    assert any(m["matnr"] == "90000005" and m["bestaetigt_betroffen"] for m in a2["materialien"])
+    assert client.post("/api/uebernehmen", json={"entwurf": hr, "von": "T", "begruendung": "HR nicht mehr"}).status_code == 200
     zustand = {m["matnr"]: m["zustand"] for m in client.get("/api/materialien").json()}
     assert zustand["90000005"] == "bestaetigt_veraltet"
+    assert client.post("/api/material/90000005", json={"entwurf": None}).json()["review"]["bestaetigt"]["veraltet"] is True
 
 
 def test_ergaenzt_unter_ausgeschlossener_baugruppe_und_klassenposition(client, regeln_sichern):
@@ -271,6 +284,8 @@ def test_ergaenzt_unter_ausgeschlossener_baugruppe_und_klassenposition(client, r
 def test_kein_root_material(client):
     r = client.post("/api/material/10000001", json={"entwurf": None})
     assert r.status_code == 400 and "kein Root-Material" in r.json()["fehler"]
+    u = client.post("/api/material/99999999", json={"entwurf": None})
+    assert u.status_code == 400 and "gibt es im SAP-Export nicht" in u.json()["fehler"]
 
 
 def test_uebernehmen_braucht_begruendung(client):

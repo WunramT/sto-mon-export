@@ -403,6 +403,7 @@ class Dienst:
             in_arbeit = set(
                 con.execute(sa.text("SELECT DISTINCT root_matnr FROM basis_bom.review")).scalars()
             )
+        stand = self._bestaetigt_stand()
         a = self.aufloeser()
         q = (q or "").strip().upper()
         out = []
@@ -412,7 +413,7 @@ class Dienst:
                 continue
             grund = "Vom Fachbereich ausgeschlossen" if m in aus else _grund_text(a.root_pruefung(m))
             if m in best:
-                zustand = "bestaetigt_veraltet" if not grund and self._veraltet(a, m) else "bestaetigt"
+                zustand = "bestaetigt_veraltet" if not grund and self._veraltet(a, m, stand.get(m)) else "bestaetigt"
             elif grund:
                 zustand = "nicht_aufloesbar"
             elif m in in_arbeit:
@@ -423,14 +424,35 @@ class Dienst:
                         "bestaetigt": best.get(m)})  # fmt: skip
         return out
 
-    def _veraltet(self, a: Aufloeser, matnr: str) -> int:
-        """Anzahl Positionen, deren Status sich seit dem letzten Review geändert hat (0 = Bestätigung aktuell)."""
+    def _export_signatur(self, matnr: str, a: Aufloeser | None = None) -> str:
+        """Fingerabdruck dessen, was der Export enthielte (Material, Menge, Einheit je Position) – mit Cache je Regelstand."""
+        import hashlib
+
+        a = a or self.aufloeser()
+        cache = a.__dict__.setdefault("_ui_signatur", {})
         rows = self._letzter_review(matnr)
-        if not rows:
-            return 0
-        erg = a.loese_alle([matnr])
-        aktuell = {z["pfad"]: z["status"] for z in erg.zeilen}
-        return sum(1 for r in rows if r["status"] is not None and aktuell.get(r["pfad"]) != r["status"])
+        schluessel = (matnr, str(rows[0]["importiert"]) if rows else None)  # Review ändert den Export mit
+        if schluessel not in cache:
+            df = self.export_zeilen(matnr, a)
+            drin = df[df["status"].isin(EXPORT_STATUS)]
+            zeilen = sorted(f"{p}|{m}|{q}|{e}" for p, m, q, e in zip(drin["pfad"], drin["matnr"], drin["menge"], drin["meins"],
+                                                                        strict=True))  # fmt: skip
+            cache[schluessel] = hashlib.sha1("\n".join(zeilen).encode(), usedforsecurity=False).hexdigest()
+        return cache[schluessel]
+
+    def _bestaetigt_stand(self) -> dict[str, str | None]:
+        with self.eng.connect() as con:
+            return dict(con.execute(sa.text("SELECT root_matnr, export_stand FROM basis_bom.bestaetigt")).all())
+
+    def _veraltet(self, a: Aufloeser, matnr: str, stand: str | None = None) -> bool:
+        """Bestätigung veraltet = der Export sähe heute anders aus als beim Bestätigen."""
+        stand = stand if stand is not None else self._bestaetigt_stand().get(matnr)
+        if not stand:
+            return False  # Altbestand ohne Fingerabdruck: nicht als veraltet melden
+        try:
+            return self._export_signatur(matnr, a) != stand
+        except Eingabefehler:
+            return True
 
     # ---------------------------------------------------------------------------------------------------------
     def _loese(self, a: Aufloeser, matnr: str) -> tuple[list[dict], list[str]]:
@@ -442,6 +464,8 @@ class Dienst:
     def material(self, matnr: str, entwurf: Entwurf | None = None) -> dict:
         matnr = matnr.strip().lstrip("0")
         roots, _aus = self._roots()
+        if matnr not in set(roots) and not self.material_info(matnr)["bekannt"]:
+            raise Eingabefehler(f"Material „{matnr}“ gibt es im SAP-Export nicht – bitte die Nummer prüfen.")
         if matnr not in set(roots):
             raise Eingabefehler(f"{matnr} ist kein Root-Material dieses Bereichs (Liste links). "
                                 "Baugruppen öffnen Sie über das Material, in dem sie verbaut sind.")  # fmt: skip
@@ -678,13 +702,14 @@ class Dienst:
                     "vorher_im_ergebnis": sum(z["status"] in EXPORT_STATUS for z in vor.values()),
                     "nachher_im_ergebnis": sum(z["status"] in EXPORT_STATUS for z in nach.values()),
                 })  # fmt: skip
-        with self.eng.connect() as con:
-            best = set(con.execute(sa.text("SELECT root_matnr FROM basis_bom.bestaetigt")).scalars())
+        best = self._bestaetigt_stand()
         for e in ergebnis:
             e["bestaetigt"] = e["matnr"] in best
+            # bestätigt UND der Export würde sich ändern → Bestätigung wird veraltet
+            e["bestaetigt_betroffen"] = e["bestaetigt"] and self._veraltet(neu, e["matnr"], best[e["matnr"]])
         ergebnis.sort(key=lambda e: (not e["bestaetigt"], -e["geaendert"]))
         return {"materialien": ergebnis, "betroffen": len(ergebnis), "geprueft": len(kandidaten),
-                "bestaetigt": sum(e["bestaetigt"] for e in ergebnis)}  # fmt: skip
+                "bestaetigt": sum(e["bestaetigt_betroffen"] for e in ergebnis)}  # fmt: skip
 
     # ---------------------------------------------------------------------------------------------------------
     def uebernehmen(self, entwurf: Entwurf, von: str, begruendung: str | None) -> dict:
@@ -749,7 +774,7 @@ class Dienst:
         with self.eng.connect() as con:
             best = con.execute(sa.text("SELECT bestaetigt_von, datum FROM basis_bom.bestaetigt WHERE root_matnr = :m"),
                                {"m": matnr}).first()  # fmt: skip
-        urteile = {r["pfad"]: {"urteil": r["urteil"], "kommentar": r["kommentar"]} for r in rows
+        urteile = {r["pfad"]: {"urteil": r["urteil"], "kommentar": r["kommentar"], "status": r["status"]} for r in rows
                    if r["pfad"] and r["status"] is not None}  # fmt: skip
         kt = self.kurztext()
         ergaenzt = [{"pfad": r["pfad"], "matnr": r["matnr"], "parent_matnr": r["parent_matnr"], "menge": r["menge"],
@@ -765,7 +790,8 @@ class Dienst:
         return {
             "urteile": urteile, "ergaenzt": ergaenzt, "veraltet": veraltet,
             "stand": str(rows[0]["importiert"]) if rows else None, "von": rows[0]["reviewer"] if rows else None,
-            "bestaetigt": {"von": best[0], "datum": str(best[1])} if best else None,
+            "bestaetigt": {"von": best[0], "datum": str(best[1]),
+                           "veraltet": self._veraltet(self.aufloeser(), matnr)} if best else None,
         }  # fmt: skip
 
     def review_speichern(self, matnr: str, urteile: dict[str, dict], ergaenzt: list[dict], von: str,
@@ -868,7 +894,7 @@ class Dienst:
         # Klassenposition „rein“ braucht das eingesetzte Material (ergänzt unter derselben Baugruppe)
         klassen = [z["pfad"] for z in erg.zeilen if not z["matnr"] and z["postp"] == "K"
                    and urteile.get(z["pfad"], {}).get("urteil") == "fehlt"]  # fmt: skip
-        falsch += [p for p in klassen if p.rsplit("/", 1)[0] not in set(ergaenzt)]
+        falsch += [p for p in klassen if p not in set(ergaenzt)]  # Ergänzung gehört zur Klassenposition selbst
         if fehlend or falsch or veraltet or widerspruch:
             teile = [f"{len(fehlend)} ohne Urteil", f"{len(falsch)} als falsch markiert",
                      f"{len(veraltet)} mit geändertem Status seit dem Review"]  # fmt: skip
@@ -877,9 +903,9 @@ class Dienst:
             raise Eingabefehler("Bestätigen nicht möglich: " + ", ".join(teile))
         with self.eng.begin() as con:
             con.execute(sa.text(
-                "INSERT INTO basis_bom.bestaetigt (root_matnr, bestaetigt_von) VALUES (:r, :v) "
-                "ON CONFLICT (root_matnr) DO UPDATE SET bestaetigt_von = :v, datum = current_date"),
-                {"r": matnr, "v": von.strip()})  # fmt: skip
+                "INSERT INTO basis_bom.bestaetigt (root_matnr, bestaetigt_von, export_stand) VALUES (:r, :v, :s) "
+                "ON CONFLICT (root_matnr) DO UPDATE SET bestaetigt_von = :v, datum = current_date, export_stand = :s"),
+                {"r": matnr, "v": von.strip(), "s": self._export_signatur(matnr)})  # fmt: skip
         return {"bestaetigt": matnr}
 
     def _widersprueche(self, aktuell: dict[str, str], urteile: dict[str, str], ergaenzt_unter: list[str] = ()) -> list[str]:
@@ -891,13 +917,13 @@ class Dienst:
         unter = lambda p: any(p == r or p.startswith(r + "/") for r in raus)  # noqa: E731
         return [p for p in rein if any(p.startswith(r + "/") for r in raus)] + [e for e in ergaenzt_unter if unter(e)]
 
-    def export_zeilen(self, matnr: str):
+    def export_zeilen(self, matnr: str, a: Aufloeser | None = None):
         """Auflösung für den SAP-Format-Download: Regelergebnis plus die gespeicherten manuellen Entscheidungen
         (D25) – offene Positionen mit „fehlt“ kommen hinein, ergänzte Materialien werden angehängt."""
         import pandas as pd
 
         matnr = matnr.strip().lstrip("0")
-        erg = self.aufloeser().loese_alle([matnr])
+        erg = (a or self.aufloeser()).loese_alle([matnr])
         if erg.uebersprungen:
             raise Eingabefehler(f"{matnr} kann nicht aufgelöst werden: {_grund_text(erg.uebersprungen[0]['grund'])}.")
         df = erg.df()
@@ -911,7 +937,12 @@ class Dienst:
             draussen = [p for p, st in zip(df["pfad"], df["status"], strict=True) if st not in EXPORT_STATUS]
             unter = df["pfad"].map(lambda p: any(p.startswith(d + "/") for d in draussen))
             df.loc[unter & df["status"].isin(EXPORT_STATUS), "status"] = AUSGESCHLOSSEN_VERERBT
-        drin = set(df.loc[df["status"].isin(EXPORT_STATUS), "pfad"]) | {matnr}
+        # Ergänzungen hängen an einer übernommenen Baugruppe, am Material selbst oder an einer Klassenposition „rein“
+        klassen_rein = {p for p, u in manuell.items() if u == "fehlt"}
+        draussen = [p for p, st in zip(df["pfad"], df["status"], strict=True)
+                    if st not in EXPORT_STATUS and p not in klassen_rein]  # fmt: skip
+        klassen_rein = {p for p in klassen_rein if not any(p.startswith(d + "/") for d in draussen)}
+        drin = set(df.loc[df["status"].isin(EXPORT_STATUS), "pfad"]) | {matnr} | klassen_rein
         neu = []
         for r in rows:
             if r["status"] is None and r["matnr"]:

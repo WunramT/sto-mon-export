@@ -4,7 +4,8 @@
     <v-card-text class="px-6">
       <v-alert v-if="daten.hinweis" type="info" variant="tonal" density="compact" class="mb-3">{{ daten.hinweis }}</v-alert>
       <p class="text-body-2 text-2 mb-4">Für Materialien, die in die Basis-Stückliste gehören, aber im Baum ganz fehlen.</p>
-      <v-select v-model="unter" :items="baugruppen" item-title="text" item-value="id" label="Unter Baugruppe" class="mb-4"
+      <p v-if="daten.klasseId" class="text-body-2 mb-4">Für die Klassenposition <strong>{{ klasse?.posnr }}</strong> (unter {{ klasseEltern }}).</p>
+      <v-select v-else v-model="unter" :items="baugruppen" item-title="text" item-value="id" label="Unter Baugruppe" class="mb-4"
         :messages="a.unterRaus(unter, true) ? 'Diese Baugruppe kommt nicht in die Basis – ein Material darunter käme nicht in den Export.' : ''" :color="a.unterRaus(unter, true) ? 'warning' : undefined" />
       <v-text-field v-model="nr" label="Materialnummer" placeholder="z. B. 10000999" inputmode="numeric" autofocus class="mb-1"
         :messages="info.text" :color="info.farbe" :error-messages="nrFehler" @update:model-value="pruefe" />
@@ -66,16 +67,19 @@ function pruefe() {
 }
 
 // Klassenposition „rein“ ohne Material ergibt keinen Sinn → beim Abbrechen das „rein“ wieder zurücknehmen
-function abbrechen() {
-  if (props.daten.klasseId) { a.setzeUrteil(props.daten.klasseId, null); ui.melde('„Sollte rein“ zurückgenommen – ohne Material bleibt die Klassenposition offen.') }
-  emit('schliessen')
-}
+function abbrechen() { emit('schliessen') }  // Rücknahme von „rein“ macht DialogHost (auch bei Esc)
+const klasse = computed(() => (props.daten.klasseId ? d.positionen.find((p: any) => p.id === props.daten.klasseId) : null))
+const klasseEltern = computed(() => {
+  const e = klasse.value ? d.positionen.find((p: any) => p.id === klasse.value.parent) : null
+  return e ? `${e.matnr} ${e.kurztext}` : d.matnr
+})
 
 function ok() {
   const wert = nr.value.trim().replace(/^0+/, '')
   if (!wert) { nrFehler.value = 'Bitte eine Materialnummer eintragen.'; return }
   if (!(Number(menge.value) > 0)) { mengeFehler.value = 'Menge größer 0'; return }
   const parent = unter.value === d.matnr ? { matnr: d.matnr } : d.positionen.find((p: any) => p.id === unter.value)
+  if (props.daten.klasseId) (props.daten as any).erledigt = true
   a.ergaenze({ parent_pfad: unter.value, parent_matnr: parent.matnr, matnr: wert, kurztext: geprueft?.kurztext || '',
     menge: Number(menge.value), meins: einheit.value, kommentar: kommentar.value.trim() || null })
   emit('schliessen')

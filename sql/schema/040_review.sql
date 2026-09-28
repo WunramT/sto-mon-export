@@ -46,3 +46,7 @@ INSERT INTO basis_bom.merkmal_text (merkmal, text) VALUES
     ('ARM_L', 'Armteil links'), ('ARM_R', 'Armteil rechts'), ('ARM_OPTIK', 'Armoptik'),
     ('RUECKEN_FUNK', 'Rückenfunktion'), ('RUECKEN_OPTIK', 'Rückenoptik')
 ON CONFLICT (merkmal) DO NOTHING;
+
+-- Fingerabdruck des SAP-Format-Exports zum Zeitpunkt der Bestätigung (D26): „veraltet“, wenn der Export heute
+-- anders aussähe – nicht schon, wenn sich nur ein Status ändert, der am Export nichts ändert.
+ALTER TABLE basis_bom.bestaetigt ADD COLUMN IF NOT EXISTS export_stand text;

@@ -99,9 +99,9 @@
           </div>
         </div>
 
-        <v-alert v-if="d.review?.bestaetigt && d.review?.veraltet" type="warning" variant="tonal" density="compact" class="mt-2 hinweis" icon="mdi-alert-decagram-outline">
+        <v-alert v-if="d.review?.bestaetigt?.veraltet" type="warning" variant="tonal" density="compact" class="mt-2 hinweis" icon="mdi-alert-decagram-outline">
           <div class="d-flex align-center ga-3">
-            <span class="flex-grow-1">Bestätigt, aber seit der Bestätigung haben Regeländerungen {{ mehrzahl(d.review.veraltet, 'Position', 'Positionen') }} verändert – die Bestätigung passt nicht mehr zum Export. Bitte aufheben und neu bewerten.</span>
+            <span class="flex-grow-1">Bestätigt, aber eine Regeländerung hat seitdem verändert, was exportiert wird – die Bestätigung passt nicht mehr zum Export. Bitte aufheben und neu bewerten.</span>
             <v-btn size="x-small" variant="outlined" @click="aufheben">Aufheben</v-btn>
           </div>
         </v-alert>
@@ -136,7 +136,7 @@
                 <span class="pkt pkt-ergaenzt" />
                 <div class="name-text">
                   <div class="zeile1"><span class="mat mono">{{ item.e.matnr }}</span> <span class="kt">{{ item.e.kurztext }}</span></div>
-                  <div class="kt">unter {{ item.e.parent_matnr }}<template v-if="item.e.kommentar"> – {{ item.e.kommentar }}</template></div>
+                  <div class="kt">{{ item.e.parent_matnr ? `unter ${item.e.parent_matnr}` : 'für Klassenposition' }}<template v-if="item.e.kommentar"> – {{ item.e.kommentar }}</template></div>
                 </div>
               </div>
               <div class="menge mono" title="Menge je Baugruppe (wie eingegeben)">{{ fmtMenge(item.e.menge, item.e.meins || 'ST') }}<small class="text-3"> je Bgr.</small></div>
@@ -221,13 +221,13 @@ function taste(ev: KeyboardEvent) {
     const p = a.sichtbar.reihenfolge.find((x) => x.p.id === a.auswahl)?.p
     if (!p) return
     const urteil = OFFEN_STATUS.has(p.status) ? 'gehoert_nicht_rein' : IM_ERGEBNIS.has(p.status) ? 'gehoert_nicht_rein' : 'fehlt'
-    a.setzeUrteil(a.auswahl, urteil)
+    a.entscheide(p, urteil)
     weiter(ids)
   }
   else if (a.auswahl && !a.bewertenGesperrt && (ev.key === 'e' || ev.key === 'E')) {
     ev.preventDefault()
     const p = a.sichtbar.reihenfolge.find((x) => x.p.id === a.auswahl)?.p
-    if (p && OFFEN_STATUS.has(p.status)) { a.setzeUrteil(a.auswahl, 'fehlt'); weiter(ids) }
+    if (p && OFFEN_STATUS.has(p.status)) { a.entscheide(p, 'fehlt'); weiter(ids) }
   }
   else if (a.auswahl && !a.bewertenGesperrt && (ev.key === 'r' || ev.key === 'R')) {
     ev.preventDefault()
@@ -278,7 +278,7 @@ async function aufheben() {
 }
 
 async function exportiere() {
-  if (d.value.review?.bestaetigt && d.value.review?.veraltet) {
+  if (d.value.review?.bestaetigt?.veraltet) {
     const ok = await ui.frage({ titel: 'Bestätigung veraltet', text: 'Seit der Bestätigung haben Regeländerungen dieses Material verändert. Der Export zeigt den aktuellen Stand, nicht den bestätigten.', ja: 'Trotzdem exportieren' })
     if (!ok) return
   }

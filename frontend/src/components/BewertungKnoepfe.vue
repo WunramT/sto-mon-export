@@ -1,5 +1,7 @@
 <template>
   <div class="bewertung" role="group" :aria-label="`Bewertung für ${p.matnr || 'Position ' + p.posnr}`">
+    <span v-if="alt" class="alt" :title="`Frühere Bewertung „${URTEIL[alt.urteil]}“ gilt nicht mehr: der Status hat sich seit dem Speichern geändert – bitte neu bewerten.`">war: {{ URTEIL[alt.urteil] }}</span>
+    <v-icon v-if="konflikt" icon="mdi-account-alert-outline" size="16" color="warning" :title="`${konflikt.von} hat hier „${URTEIL[konflikt.urteil]}“ gespeichert`" />
     <v-tooltip v-for="k in knoepfe" :key="k.urteil" :text="sperre || k.titel">
       <template #activator="{ props }">
         <span v-bind="props">
@@ -16,13 +18,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useArbeit } from '@/stores/arbeit'
-import { useUi } from '@/stores/ui'
-import { IM_ERGEBNIS, OFFEN_STATUS } from '@/utils/texte'
+import { IM_ERGEBNIS, OFFEN_STATUS, URTEIL } from '@/utils/texte'
 
 const props = defineProps<{ p: any; imBaum?: boolean }>()
 const a = useArbeit()
 const u = computed(() => a.urteilVon(props.p.id))
 const sperre = computed(() => a.bewertenGesperrt)
+const alt = computed(() => a.altesUrteil(props.p.id))
+const konflikt = computed(() => a.konfliktZeilen[props.p.id])
 
 const RICHTIG = { urteil: 'richtig', text: 'Richtig', kurz: '', titel: 'Richtig: der Status dieser Zeile passt', icon: 'mdi-check', art: 'ok', test: 'richtig' }
 const RAUS = { urteil: 'gehoert_nicht_rein', text: 'Sollte raus', kurz: 'raus', titel: 'Falsch: gehört NICHT in die Basis-Stückliste', icon: 'mdi-minus-circle-outline', art: 'nein', test: 'falsch' }
@@ -31,14 +34,8 @@ const REIN = { urteil: 'fehlt', text: 'Sollte rein', kurz: 'rein', titel: 'Falsc
 const knoepfe = computed(() => OFFEN_STATUS.has(props.p.status)
   ? [{ ...REIN, art: 'rein', test: 'rein', titel: 'Gehört in die Basis-Stückliste' }, { ...RAUS, test: 'falsch', titel: 'Gehört nicht in die Basis-Stückliste' }]
   : [RICHTIG, IM_ERGEBNIS.has(props.p.status) ? RAUS : REIN])
-const ui = useUi()
 function setze(urteil: string) {
-  const aus = u.value?.urteil === urteil
-  a.setzeUrteil(props.p.id, aus ? null : urteil)
-  // Klassenposition ohne Material: „rein“ heißt, ein bestimmtes Material gehört hinein → gleich fragen, welches
-  if (!aus && urteil === 'fehlt' && !props.p.matnr && props.p.postp === 'K') {
-    ui.oeffne('ergaenzen', { parentId: props.p.parent, klasseId: props.p.id, hinweis: `Welches Material wird für die Klassenposition ${props.p.posnr} eingesetzt?` })
-  }
+  a.entscheide(props.p, u.value?.urteil === urteil ? null : urteil)
 }
 </script>
 
@@ -51,5 +48,6 @@ function setze(urteil: string) {
 .bew.rein.an { background: #2f6db3; border-color: #2f6db3; color: #fff; }
 .bew.nein.an { background: #b3261e; border-color: #b3261e; color: #fff; }
 .txt-kurz { display: none; }
+.alt { font-size: 11px; color: var(--s-manuell); align-self: center; white-space: nowrap; }
 @media (max-width: 1440px) { .bew { width: 52px; padding: 3px 0; } .bew .txt { display: none; } .bew .txt-kurz { display: inline; } .bew.ok { width: 34px; } }
 </style>

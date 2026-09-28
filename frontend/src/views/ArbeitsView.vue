@@ -71,6 +71,7 @@ async function pruefeDatenstand() {
         await a.start()
         if (a.startFehler) { startFehler.value = a.startFehler; timer = window.setTimeout(pruefeDatenstand, 5000); return }
         oeffneAusRoute(true)
+        if (typeof route.query.ansicht === 'string' && ['regeln', 'auswirkung'].includes(route.query.ansicht)) a.ansicht = route.query.ansicht as any
         if (a.matnr && !a.daten) a.ladeMaterial(a.matnr, { behalteAuswahl: true })
       }
       return
@@ -93,6 +94,12 @@ function oeffneAusRoute(erstesSonst = false) {
 }
 
 watch(() => route.params.matnr, () => { if (bereit.value) oeffneAusRoute() })
+// Reiter verlinkbar: /material/<nr>?ansicht=regeln|auswirkung
+watch(() => a.ansicht, (v) => {
+  const q = v === 'stueckliste' ? undefined : v
+  if (route.query.ansicht !== q) router.replace({ query: { ...route.query, ansicht: q } })
+})
+watch(() => route.query.ansicht, (v) => { if (typeof v === 'string' && ['regeln', 'auswirkung'].includes(v) && a.ansicht !== v) a.ansicht = v as any })
 watch(() => a.matnr, (m) => { if (m && route.params.matnr !== m) router.push({ name: 'material', params: { matnr: m } }) })
 
 function vorVerlassen(ev: BeforeUnloadEvent) {

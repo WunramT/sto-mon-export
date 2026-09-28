@@ -33,7 +33,8 @@
         <tbody>
           <tr v-for="m in w.materialien" :key="m.matnr" class="klickbar" title="Material mit Entwurf öffnen" @click="a.oeffneMaterial(m.matnr)">
             <td><strong class="mono">{{ m.matnr }}</strong>
-              <v-chip v-if="m.bestaetigt" size="x-small" color="warning" variant="flat" class="ml-2" prepend-icon="mdi-check-decagram">bestätigt</v-chip>
+              <v-chip v-if="m.bestaetigt_betroffen" size="x-small" color="warning" variant="flat" class="ml-2" prepend-icon="mdi-alert-decagram-outline" title="Bestätigt – der Export ändert sich, die Bestätigung wird veraltet">bestätigt · wird veraltet</v-chip>
+              <v-chip v-else-if="m.bestaetigt" size="x-small" variant="tonal" class="ml-2" prepend-icon="mdi-check-decagram" title="Bestätigt – der Export bleibt gleich (z. B. Regel bestätigt eine manuelle Entscheidung)">bestätigt · Export gleich</v-chip>
               <div class="text-2 klein">{{ m.kurztext }}</div></td>
             <td>
               <div v-for="(x, i) in m.wechsel" :key="i" class="wechsel">

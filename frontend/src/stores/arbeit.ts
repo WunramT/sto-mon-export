@@ -344,10 +344,22 @@ export const useArbeit = defineStore('arbeit', () => {
   }
 
   // ------------------------------------------------------------------------------------------ Baum
+  const statusNachId = computed(() => new Map<string, string>((daten.value?.positionen || []).map((p: Dict) => [p.id, p.status])))
   function urteilVon(id: string) {
     if (lokal.value[id] !== undefined) return lokal.value[id]
-    return daten.value?.review?.urteile?.[id] || null
+    const u = daten.value?.review?.urteile?.[id]
+    // gespeichertes Urteil gilt nur, solange die Position noch denselben Status hat (sonst „veraltet“)
+    if (u && u.status && statusNachId.value.get(id) && u.status !== statusNachId.value.get(id)) return null
+    return u || null
   }
+  // gespeichertes Urteil, das wegen einer Regeländerung nicht mehr gilt (zur Anzeige „war: …“)
+  function altesUrteil(id: string) {
+    if (lokal.value[id] !== undefined) return null
+    const u = daten.value?.review?.urteile?.[id]
+    return u && u.status && u.status !== statusNachId.value.get(id) ? u : null
+  }
+  // Abweichungen nach einem Speicherkonflikt: Urteil der Kollegin/des Kollegen je Zeile
+  const konfliktZeilen = ref<Dict>({})
 
   const sichtbar = computed(() => {
     const d = daten.value
@@ -451,6 +463,14 @@ export const useArbeit = defineStore('arbeit', () => {
     return [...gespeichert.map((e: Dict) => ({ ...e, lokal: false })), ...lokalErgaenzt.value.map((e, i) => ({ ...e, lokal: true, index: i }))]
   })
 
+  // Urteil setzen wie per Knopf – Klassenposition „rein“ fragt nach dem eingesetzten Material
+  function entscheide(p: Dict, urteil: string | null) {
+    setzeUrteil(p.id, urteil)
+    if (urteil === 'fehlt' && !p.matnr && p.postp === 'K' && klasseOhneMaterial(p)) {
+      ui.oeffne('ergaenzen', { parentId: p.id, klasseId: p.id, hinweis: `Welches Material wird für die Klassenposition ${p.posnr} eingesetzt?` })
+    }
+  }
+
   function setzeUrteil(id: string, urteil: string | null) {
     const alt = daten.value?.review?.urteile?.[id]
     const l = { ...lokal.value }
@@ -533,7 +553,7 @@ export const useArbeit = defineStore('arbeit', () => {
   // Klassenposition „rein“ ohne ergänztes Material unter derselben Baugruppe
   function klasseOhneMaterial(p: Dict) {
     if (p.matnr || p.postp !== 'K' || manuell(p) !== 'rein') return false
-    return !ergaenzteZeilen.value.some((e: Dict) => (e.parent_pfad || e.pfad.split('/+:')[0]) === p.parent)
+    return !ergaenzteZeilen.value.some((e: Dict) => (e.parent_pfad || e.pfad.split('/+:')[0]) === p.id)
   }
   // Kennzahlen wie im Export (D26): Regelergebnis + manuelle Entscheidungen + Ergänzungen
   const kennzahlen = computed(() => {
@@ -561,6 +581,7 @@ export const useArbeit = defineStore('arbeit', () => {
     const rs = reviewStand.value
     if (!d?.positionen || d.review?.bestaetigt) return null
     if (!entwurfLeer.value) return { text: 'Erst den Entwurf übernehmen oder verwerfen.' }
+    if (d.review?.veraltet && !rs.ungespeichert) return null  // eigener Hinweis „Regeln geändert – neu bewerten“
     if (widersprueche.value.length) {
       return { text: `${mehrzahl(widersprueche.value.length, 'Position ist', 'Positionen sind')} „Sollte rein“, ihre Baugruppe aber nicht in der Basis – bitte eines von beiden ändern.`, ziel: widersprueche.value[0] }
     }
@@ -572,9 +593,8 @@ export const useArbeit = defineStore('arbeit', () => {
     if (rs.ungespeichert) return { text: 'Erst speichern, dann bestätigen.' }
     const falsch = d.positionen.filter((p: Dict) => !urteilPasst(p))
     if (falsch.length) {
-      return { text: `${mehrzahl(falsch.length, 'Zeile', 'Zeilen')} als falsch markiert. Regel anpassen und neu bewerten – oder so lassen: die Abweichung ist gespeichert.`, ziel: falsch[0]?.id }
+      return { text: `${mehrzahl(falsch.length, 'Zeile ist', 'Zeilen sind')} als falsch markiert – die Regel anpassen oder die Position manuell entscheiden. Die Abweichung ist gespeichert und dient als Hinweis für die Regeln.`, ziel: falsch[0]?.id }
     }
-    if (d.review?.veraltet) return { text: `${mehrzahl(d.review.veraltet, 'Zeile hat', 'Zeilen haben')} seit der Bewertung einen anderen Status – bitte neu bewerten.` }
     return null
   })
 
@@ -602,17 +622,21 @@ export const useArbeit = defineStore('arbeit', () => {
       if (e instanceof ApiFehler && e.status === 409) {
         // Stand der Kollegin laden; die eigenen ungespeicherten Urteile bleiben darüber liegen
         await ladeMaterial(d.matnr, { behalteAuswahl: true })
-        const abweichend = Object.entries(lokal.value).filter(([id, u]) => {
-          const ihr = daten.value?.review?.urteile?.[id]
-          return ihr && ihr.urteil !== (u as Dict)?.urteil
-        }).length
         const wer = e.daten?.konflikte?.[0]?.von || 'Jemand'
+        const kz: Dict = {}
+        for (const [id, u] of Object.entries(lokal.value)) {
+          const ihr = daten.value?.review?.urteile?.[id]
+          if (ihr && ihr.urteil !== (u as Dict)?.urteil) kz[id] = { von: wer, urteil: ihr.urteil }
+        }
+        konfliktZeilen.value = kz
+        const abweichend = Object.keys(kz).length
         throw new ApiFehler(`${wer} hat dieses Material inzwischen bewertet.` + (abweichend
           ? ` Bei ${mehrzahl(abweichend, 'Zeile weicht', 'Zeilen weichen')} Ihr Urteil von dem der Kollegin/des Kollegen ab – Ihres gilt, wenn Sie erneut speichern.`
           : ' Ihre Urteile liegen jetzt über deren Stand – bitte kurz prüfen und erneut speichern.'), 409)
       }
       throw e
     }
+    konfliktZeilen.value = {}
     // nur das Gesendete als gespeichert abhaken – was während des Speicherns dazukam, bleibt offen
     const rest = { ...lokal.value }
     for (const [id, u] of Object.entries(gesendet.lokal)) if (JSON.stringify(rest[id]) === JSON.stringify(u)) delete rest[id]
@@ -697,7 +721,7 @@ export const useArbeit = defineStore('arbeit', () => {
     setzeUrteil, setzeKommentar, alleSichtbarenRichtig, ergaenze, entferneErgaenzung, bewertungVerwerfen, sperrGrund,
     bestaetigbar, speichereReview, bestaetige, bestaetigungAufheben, exportiere, ladeRegelAnsicht, berechneAuswirkung,
     oeffneMerkmal, setzeMerkmalName, offeneFragen, ladeServerEntwurf, entwurfGeaendert, speichereLokal, bewertenGesperrt,
-    entwurfSofortSichern, urteilPasst, manuell, klasseOhneMaterial, unterRaus, widersprueche, kennzahlen, regelnVeraltet, pruefeRegelstand,
+    entwurfSofortSichern, urteilPasst, manuell, klasseOhneMaterial, unterRaus, altesUrteil, konfliktZeilen, entscheide, widersprueche, kennzahlen, regelnVeraltet, pruefeRegelstand,
     aktualisiereRegeln, startKontext,
     klappeTrefferAuf,
   }

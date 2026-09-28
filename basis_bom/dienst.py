@@ -17,8 +17,8 @@ from dataclasses import dataclass, field
 import sqlalchemy as sa
 from sqlalchemy.engine import Engine
 
-from .. import lauf, rules
-from ..explode import (
+from . import lauf, rules
+from .explode import (
     AUSGESCHLOSSEN,
     AUSGESCHLOSSEN_VERERBT,
     BASIS,
@@ -29,9 +29,9 @@ from ..explode import (
     UNTERHALB_MANUELL,
     Aufloeser,
 )
-from ..ranking import einzelwerte, negiert
-from ..rules import Alias, Regel, Regelstand
-from ..source import KNART_AUSWAHL, SapSource
+from .ranking import einzelwerte, negiert
+from .rules import Alias, Regel, Regelstand
+from .source import KNART_AUSWAHL, SapSource
 
 log = logging.getLogger(__name__)
 

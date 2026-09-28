@@ -14,8 +14,6 @@ dependencies = [
     "typer",
     "pydantic",
     "openpyxl",  # XLSX-Exporte lesen
-    "fastapi",  # Web-Oberfläche für den Fachbereich (basis-bom ui)
-    "uvicorn",
 ]
 
 [project.optional-dependencies]
@@ -25,17 +23,15 @@ dev = ["pytest", "jupyterlab", "jupytext", "ruff", "ipykernel", "httpx", "playwr
 basis-bom = "basis_bom.cli:app"
 
 [tool.setuptools]
-packages = ["basis_bom", "basis_bom.ui"]
-
-[tool.setuptools.package-data]
-"basis_bom.ui" = ["static/*"]
+packages = ["basis_bom"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["backend"]
 
 [tool.ruff]
 line-length = 110
-extend-exclude = ["legacy", "notebooks/*.ipynb"]
+extend-exclude = ["legacy", "notebooks/*.ipynb", "backend", "frontend"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]

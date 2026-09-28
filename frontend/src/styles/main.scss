@@ -1,0 +1,61 @@
+// Globale Stile. Farben der Status stehen hier (nicht in Vuetify), damit Baum, Chips und Legende gleich aussehen.
+:root {
+  --text-1: #1d2327;
+  --text-2: #56616a;
+  --text-3: #8a949c;
+  --linie: #e3e6ea;
+  --linie-2: #d3d8dd;
+  --flaeche: #ffffff;
+  --flaeche-2: #f7f8fa;
+  --hover: #f1f3f6;
+  --auswahl: #fdecef;
+  --auswahl-rand: #ce003c;
+
+  --s-basis: #1e7d4f;        --s-basis-bg: #e3f3ea;
+  --s-unbedingt: #2f6db3;    --s-unbedingt-bg: #e4eefa;
+  --s-manuell: #b86e00;      --s-manuell-bg: #fff1dc;
+  --s-wartet: #8a6d1d;       --s-wartet-bg: #f7f0da;
+  --s-aus: #6b747c;          --s-aus-bg: #eef0f2;
+  --s-ignoriert: #9aa2a9;    --s-ignoriert-bg: #f3f4f5;
+  --entwurf: #6a3fb5;        --entwurf-bg: #f0eafb;
+}
+
+html, body { font-family: 'Inter Variable', 'Segoe UI', system-ui, -apple-system, sans-serif; color: var(--text-1); }
+html { overflow-y: hidden; }
+.v-application { font-family: inherit !important; }
+.v-application .text-h6, .v-application .text-h5, .v-card-title { font-family: inherit !important; letter-spacing: -0.01em; }
+
+.mono { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum'; }
+.text-2 { color: var(--text-2); }
+.text-3 { color: var(--text-3); }
+.klein { font-size: 12px; }
+
+// Status-Pillen
+.st { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px 2px 7px; border-radius: 999px; font-size: 12px; font-weight: 550; white-space: nowrap; line-height: 18px; }
+.st .pkt { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
+.st-basis { color: var(--s-basis); background: var(--s-basis-bg); }
+.st-unbedingt { color: var(--s-unbedingt); background: var(--s-unbedingt-bg); }
+.st-manuell_prüfen { color: var(--s-manuell); background: var(--s-manuell-bg); }
+.st-unterhalb_manuell { color: var(--s-wartet); background: var(--s-wartet-bg); }
+.st-ausgeschlossen, .st-ausgeschlossen_vererbt { color: var(--s-aus); background: var(--s-aus-bg); }
+.st-ignoriert { color: var(--s-ignoriert); background: var(--s-ignoriert-bg); }
+.st-ergaenzt { color: var(--entwurf); background: var(--entwurf-bg); }
+
+.pkt-basis { background: var(--s-basis); } .pkt-unbedingt { background: var(--s-unbedingt); }
+.pkt-manuell_prüfen { background: var(--s-manuell); } .pkt-unterhalb_manuell { background: var(--s-wartet); }
+.pkt-ausgeschlossen, .pkt-ausgeschlossen_vererbt { background: var(--s-aus); } .pkt-ignoriert { background: var(--s-ignoriert); }
+
+.leer-hinweis { padding: 48px 24px; text-align: center; color: var(--text-2); }
+.abschnitt-titel { font-size: 11px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); margin: 0 0 8px; }
+
+// Scrollbalken dezent
+* { scrollbar-width: thin; scrollbar-color: #c5cbd1 transparent; }
+
+:focus-visible { outline: 2px solid var(--auswahl-rand); outline-offset: 1px; }
+
+// Eingabefelder kompakt und in derselben Schriftgröße wie der Rest
+.v-field__input { font-size: 14px; }
+.v-field--variant-outlined .v-field__outline { --v-field-border-opacity: .22; }
+.v-selection-control .v-label { white-space: nowrap; font-size: 13.5px; opacity: .9; }
+.v-selection-control { flex: 0 0 auto !important; }
+.v-btn { text-transform: none; letter-spacing: 0; }

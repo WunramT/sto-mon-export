@@ -152,20 +152,6 @@ def regel_alias(
 
 
 @app.command()
-def ui(
-    host: str = typer.Option("0.0.0.0", "--host"),
-    port: int = typer.Option(8000, "--port"),
-) -> None:
-    """Web-Oberfläche für den Fachbereich starten (http://localhost:8000)."""
-    import uvicorn
-
-    from .ui.app import erstelle_app
-
-    typer.echo(f"Basis-Stückliste: http://localhost:{port}  (Strg+C beendet)")
-    uvicorn.run(erstelle_app(db.engine()), host=host, port=port, log_level="warning")
-
-
-@app.command()
 def roots(beispiele: int = typer.Option(5, "--beispiele", help="Beispiel-Materialien je Grund")) -> None:
     """Warum Root-Materialien nicht aufgelöst werden: Anzahl je Grund mit Beispielen."""
     import re

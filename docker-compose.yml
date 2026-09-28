@@ -1,0 +1,49 @@
+# Lokal alles starten wie auf dem Server (Images aus den Dockerfiles, Beispieldaten ohne Exporte):
+#   docker compose up --build   →  http://localhost:3000   (Passwort aus .env, Standard: test)
+# Echte Exporte: EXPORTS_DIR=/pfad/zu/exporten docker compose up
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: basis
+      POSTGRES_PASSWORD: basis
+      POSTGRES_DB: konfig_stueckliste_export
+    command: ["postgres", "-c", "shared_buffers=1GB", "-c", "work_mem=256MB", "-c", "maintenance_work_mem=512MB"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U basis -d konfig_stueckliste_export"]
+      interval: 5s
+      retries: 20
+
+  backend:
+    build: { context: ., dockerfile: backend/Dockerfile }
+    env_file: [{ path: .env, required: false }]
+    environment:
+      MODE: ${MODE:-production}
+      SECRET_KEY: ${SECRET_KEY:-lokal-secret-key-mindestens-32-zeichen-lang-0000}
+      MASTER_PASSWORD_ADMIN: ${MASTER_PASSWORD_ADMIN:-test}
+      DATABASE_HOST: postgres
+      DATABASE_NAME: konfig_stueckliste_export
+      DATABASE_USER: basis
+      DATABASE_PASSWORD: basis
+      DEMO_FIXTURES: ${DEMO_FIXTURES:-T}
+    volumes:
+      - ${EXPORTS_DIR:-./export}:/data/exports:ro
+      - out:/data/out
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  frontend:
+    build: { context: ., dockerfile: frontend/Dockerfile }
+    environment:
+      BACKEND_HOST: backend
+      BACKEND_PORT: "8000"
+      VITE_BASE_PATH: /
+    ports:
+      - "3000:80"
+    depends_on: [backend]
+
+volumes:
+  pgdata:
+  out:

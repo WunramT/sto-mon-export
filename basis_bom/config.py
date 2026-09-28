@@ -9,7 +9,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 SQL_DIR = REPO_ROOT / "sql"
 FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures"
 LEGACY_SCRIPT = REPO_ROOT / "legacy" / "basis_bom_v0.py"
-FRAGEN_MD = REPO_ROOT / "docs" / "FRAGEN.md"
+FRAGEN_MD = Path(os.environ.get("BASIS_BOM_FRAGEN", REPO_ROOT / "docs" / "FRAGEN.md"))
 
 WERKS = "4000"
 STLAN = "1"

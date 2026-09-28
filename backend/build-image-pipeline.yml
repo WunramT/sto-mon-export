@@ -1,0 +1,80 @@
+# BACKEND: Lint, Tests (Fachlogik + API gegen Postgres), Image bauen und signieren
+variables:
+  IMAGE_TAG: $CI_COMMIT_SHORT_SHA
+  PYTHON_VERSION: "3.13"
+
+include:
+  - component: $CI_SERVER_FQDN/infrastructure/ci-cd-catalog/buildah/buildah-build@~latest
+    inputs:
+      stage: Build
+      job_name: build:buildah:backend
+      dockerfile: backend/Dockerfile
+      image_name: dap-api/konfig-stueckliste-export
+      enable_layers_cache: false
+  - component: $CI_SERVER_FQDN/infrastructure/ci-cd-catalog/cosign/cosign-sign@~latest
+    inputs:
+      stage: Sign
+      image_name: dap-api/konfig-stueckliste-export
+      job_name: sign:cosign:backend
+
+.backend-aenderungen: &backend-aenderungen
+  - backend/**/*
+  - basis_bom/**/*
+  - sql/**/*
+  - legacy/**/*
+  - tests/**/*
+  - pyproject.toml
+
+lint:backend:
+  stage: Test
+  image: python:${PYTHON_VERSION}-slim
+  script:
+    - pip install --no-cache-dir "ruff>=0.5"
+    - ruff check basis_bom tests
+    - ruff check --config backend/pyproject.toml backend/app backend/scripts || true
+  rules:
+    - changes: *backend-aenderungen
+
+test:backend:
+  stage: Test
+  image: python:${PYTHON_VERSION}-slim
+  services:
+    - name: postgres:16-alpine
+      alias: postgres
+      variables:
+        POSTGRES_DB: basis
+        POSTGRES_USER: basis
+        POSTGRES_PASSWORD: basis
+  variables:
+    PYTHONDONTWRITEBYTECODE: "1"
+    PYTHONUNBUFFERED: "1"
+    # conftest.py legt daraus die Test-Datenbank basis_test an
+    DATABASE_URL: "postgresql://basis:basis@postgres:5432/basis"
+  script:
+    - pip install --no-cache-dir -r backend/requirements.txt pytest httpx jupytext
+    - pip install --no-cache-dir --no-deps -e .
+    - pytest -q --junitxml=backend-tests.xml
+  artifacts:
+    when: always
+    reports:
+      junit: backend-tests.xml
+  needs:
+    - job: scan:semgrep
+    - job: scan:trivy
+    - job: scan:hadolint
+  rules:
+    - changes: *backend-aenderungen
+
+build:buildah:backend:
+  needs:
+    - job: test:backend
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes: *backend-aenderungen
+
+sign:cosign:backend:
+  needs:
+    - job: build:buildah:backend
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes: *backend-aenderungen

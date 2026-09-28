@@ -1,23 +1,61 @@
-"""Web-Oberfläche: API über FastAPI-TestClient gegen die Fixture-Datenbank."""
+"""Backend-API (backend/app) über FastAPI-TestClient gegen die Fixture-Datenbank."""
+
+import os
+import sys
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
-from basis_bom import regress, rules
-from basis_bom.ui.app import erstelle_app
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "backend"))
+os.environ.setdefault("SECRET_KEY", "test-secret-key-mindestens-32-zeichen-lang")
+os.environ.setdefault("MASTER_PASSWORD_ADMIN", "geheim")
+os.environ.setdefault("MODE", "production")
+
+from app.main import create_app  # noqa: E402
+
+from basis_bom import regress, rules  # noqa: E402
 
 FK_BASIS = {"regeln": [{"merkmal": "SITZQUALI", "wert": "FK", "status": "BASIS", "rang": 2,
                         "vorher": {"status": "OFFEN", "rang": None}}]}  # fmt: skip
 
 
+@pytest.fixture(scope="module")
+def app(fixture_db):
+    app = create_app(fixture_db, starte_laden=False)
+    app.state.datenstand.beim_start()
+    return app
+
+
 @pytest.fixture()
-def client(fixture_db):
-    return TestClient(erstelle_app(fixture_db))
+def client(app):
+    c = TestClient(app)
+    token = c.post("/api/auth/login", json={"passwort": "geheim"}).json()["access_token"]
+    c.headers["Authorization"] = f"Bearer {token}"
+    return c
+
+
+def test_anmeldung(app):
+    c = TestClient(app)
+    assert c.get("/api/health").json()["status"] == "ok"
+    assert c.get("/api/auth/config").json()["auth_aktiv"] is True
+    assert c.get("/api/meta").status_code == 401
+    assert c.post("/api/auth/login", json={"passwort": "falsch"}).status_code == 401
+    assert c.get("/api/meta", headers={"Authorization": "Bearer kaputt"}).status_code == 401
+
+
+def test_datenstand_und_export(client):
+    d = client.get("/api/datenstand").json()
+    assert d["zustand"] == "bereit" and d["quelle"] == "datenbank"
+    r = client.get("/api/export/90000001")
+    assert r.status_code == 200 and "attachment" in r.headers["content-disposition"]
+    assert r.text.lstrip("\ufeff").startswith("Werk;Material;")
+    assert client.get("/api/export/90000003").status_code == 400
+    # ohne Exporte im Verzeichnis kein Neuladen
+    assert client.post("/api/datenstand/neu-laden").status_code == 400
 
 
 def test_seite_und_meta(client):
-    assert "Basis-Stückliste" in client.get("/").text
-    assert client.get("/static/app.js").status_code == 200
     m = client.get("/api/meta").json()
     assert m["stichtag"] == "2026-09-23" and m["regeln"] > 0
 
@@ -56,7 +94,7 @@ def test_entwurf_vorschau_und_auswirkung(client):
     assert {m["matnr"] for m in a["materialien"]} == {"90000001", "90000005", "90000006"}
     assert a["materialien"][0]["wechsel"][0] == {"von": "manuell_prüfen", "nach": "basis", "anzahl": 1}
     # ohne Übernahme bleibt der gespeicherte Stand unverändert
-    assert rules.lade_regelstand(client.app.state.dienst.eng).status("SITZQUALI", "FK") in (None, "OFFEN")
+    assert rules.lade_regelstand(client.app.state.datenstand.eng).status("SITZQUALI", "FK") in (None, "OFFEN")
 
 
 def test_uebernehmen_mit_konflikt(client, fixture_db):

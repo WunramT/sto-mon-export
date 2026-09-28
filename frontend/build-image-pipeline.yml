@@ -1,0 +1,97 @@
+# FRONTEND: Lint, Typprüfung, Unit-Tests, E2E gegen Backend mit Beispieldaten, Image bauen und signieren
+variables:
+  NODE_VERSION: "22"
+
+include:
+  - component: $CI_SERVER_FQDN/infrastructure/ci-cd-catalog/buildah/buildah-build@~latest
+    inputs:
+      stage: Build
+      job_name: build:buildah:frontend
+      dockerfile: frontend/Dockerfile
+      image_name: dap-ui/konfig-stueckliste-export
+      enable_layers_cache: false
+  - component: $CI_SERVER_FQDN/infrastructure/ci-cd-catalog/cosign/cosign-sign@~latest
+    inputs:
+      stage: Sign
+      image_name: dap-ui/konfig-stueckliste-export
+      job_name: sign:cosign:frontend
+
+test:frontend:
+  stage: Test
+  image: node:${NODE_VERSION}-slim
+  before_script:
+    - cd frontend
+    - npm ci
+  script:
+    - npm run lint
+    - npm run type-check
+    - npm run test:run
+  needs:
+    - job: scan:semgrep
+    - job: scan:trivy
+    - job: scan:hadolint
+  rules:
+    - changes:
+        - frontend/**/*
+
+# Ende-zu-Ende: echtes Backend (Beispieldaten) + gebautes Frontend (vite preview mit /api-Proxy)
+test:e2e:
+  stage: Test
+  image: mcr.microsoft.com/playwright:v1.57.0-noble
+  services:
+    - name: postgres:16-alpine
+      alias: postgres
+      variables:
+        POSTGRES_DB: konfig_stueckliste_export
+        POSTGRES_USER: basis
+        POSTGRES_PASSWORD: basis
+  variables:
+    DATABASE_HOST: postgres
+    DATABASE_USER: basis
+    DATABASE_PASSWORD: basis
+    SECRET_KEY: "e2e-secret-key-mindestens-32-zeichen-lang"
+    MASTER_PASSWORD_ADMIN: "e2e-passwort"
+    DEMO_FIXTURES: "T"
+    EXPORTS_DIR: /tmp/keine-exporte
+    OUT_DIR: /tmp/out
+    E2E_PASSWORT: "e2e-passwort"
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends python3 python3-venv
+    - python3 -m venv /tmp/venv && /tmp/venv/bin/pip install -r backend/requirements.txt
+    - (cd backend && PYTHONPATH=$CI_PROJECT_DIR/backend:$CI_PROJECT_DIR /tmp/venv/bin/uvicorn app.main:create_app --factory --port 8000 &)
+    - cd frontend && npm ci && VITE_BASE_PATH=/ npm run build
+    - (VITE_BASE_PATH=/ VITE_PROXY_TARGET=http://localhost:8000 npx vite preview --port 3000 --strictPort &)
+    - for i in $(seq 1 30); do curl -fs http://localhost:3000/api/health | grep -q bereit && break; sleep 2; done
+  script:
+    - npx playwright test
+  artifacts:
+    when: always
+    paths:
+      - frontend/playwright-report/
+      - frontend/test-results/
+    reports:
+      junit: frontend/test-results/e2e-results.xml
+    expire_in: 30 days
+  rules:
+    - changes:
+        - frontend/**/*
+        - backend/**/*
+        - basis_bom/**/*
+
+build:buildah:frontend:
+  needs:
+    - job: test:frontend
+    - job: test:e2e
+      optional: true
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes:
+        - frontend/**/*
+
+sign:cosign:frontend:
+  needs:
+    - job: build:buildah:frontend
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes:
+        - frontend/**/*

@@ -54,10 +54,16 @@ def test_optik_ohne_suffix(parser):
     assert parser.parse("ARM=2").offene_aliasse == ["ARM"]
 
 
-@pytest.mark.parametrize("roh", ["SQ<>HR", "SQ!=HR", "NICHT SQ=HR", "SITZQUALI NOT HR"])
-def test_negation_nicht_parsbar(parser, roh):
+@pytest.mark.parametrize("roh", ["SQ<>HR", "SQ!=HR", "SQ <> HR"])
+def test_ungleich_wird_ausgewertet(parser, roh):
     e = parser.parse(roh)
-    assert not e.parsbar and e.fehler.startswith("negation") and e.paare == []
+    assert e.parsbar and e.paare == [("SITZQUALI", "≠HR")]
+
+
+@pytest.mark.parametrize("roh", ["NICHT SQ=HR", "SITZQUALI NOT HR", "SQ<>"])
+def test_negation_als_wort_nicht_parsbar(parser, roh):
+    e = parser.parse(roh)
+    assert not e.parsbar and e.paare == []
 
 
 @pytest.mark.parametrize("roh", ["", "SQ=", "SQ=HR SH=46", "=HR"])

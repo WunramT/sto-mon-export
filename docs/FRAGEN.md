@@ -215,3 +215,15 @@ synthetischen Fixtures (`tests/fixtures/`) gebaut und getestet. Offen, bis jeman
   Wörtlich nach D4 führt es zu `manuell_prüfen`, dann kann die Alternative nie ausgeschlossen werden.
 - 9 × `PP2000_KLIPS_CNC<>X` (die einzige Negation, F2). **Q47** Soll der Parser Negation als „Merkmal ≠ Wert“
   auswerten (passt, wenn der gewählte Wert nicht X ist)?
+
+## Anwendung für den Fachbereich (2026-09-28)
+
+Regelinhalte entscheidet der Fachbereich; die Anwendung stellt nur die Mechanik. Umgesetzt, bitte bestätigen:
+- **Q20 → umgesetzt:** `NICHT_BASIS` bei einer Systemregel (Wert `vorhanden`) schließt die Positionen aus. Sonst
+  könnte der Fachbereich Alternativen wie `PP4000_MATERIAL_BUCHE_26MM`/`_32MM` nie wegschalten. Für gewöhnliche
+  Merkmale bleibt D4 (nur NICHT_BASIS/OFFEN → `kein_rang_fuer`, manuell).
+- **Q47 → umgesetzt:** `M<>W` / `M!=W` wird als „Merkmal ≠ Wert“ ausgewertet (passt, wenn auf der Ebene ein anderer
+  Wert gewählt ist). Wortformen `NICHT`/`NOT` bleiben nicht parsbar.
+- **Regel-Arbeitsliste:** `basis-bom regel export` / `regel import` – XLSX mit allen Regeln und nicht zugeordneten
+  Kürzeln samt Vorkommen im letzten Lauf; Import prüft Status, Pflicht-Rang und Rang-Eindeutigkeit vorab und
+  schreibt alles historisiert in einer Transaktion (Rangtausch möglich).

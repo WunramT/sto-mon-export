@@ -21,7 +21,9 @@ from dataclasses import dataclass, field
 
 from .rules import BASIS, SITZHOEHE, SYSTEMWERT, Alias
 
-NEGATION = re.compile(r"<>|!=|\bNICHT\b|\bNOT\b")
+NEGATION = re.compile(r"\bNICHT\b|\bNOT\b")  # Wortformen bleiben nicht parsbar (Syntax unklar)
+UNGLEICH = re.compile(r"\s*(<>|!=)\s*")
+NICHT_GLEICH = "≠"  # Präfix eines Werts: Bedingung „Merkmal ≠ Wert“ (Q47)
 _UNBEKANNT_START = re.compile(r"[A-Z0-9][A-Z0-9_]*?(?==)")
 _UNBEKANNT_GRENZE = re.compile(r"[A-Z][A-Z0-9]*(?==)")
 _ZAHL2 = re.compile(r"\d{2}(?=_|$)")
@@ -70,7 +72,8 @@ class Parser:
         if not s:
             return self._fehler(erg, "leer")
         if NEGATION.search(s):
-            return self._fehler(erg, "negation (F2 offen)")
+            return self._fehler(erg, "negation als Wort (NICHT/NOT) nicht auswertbar")
+        s = UNGLEICH.sub("=" + NICHT_GLEICH, s)  # M<>W → M=≠W
         m = re.fullmatch(r"([A-Z0-9_]+)\s+([A-Z0-9/+]+)", s)
         if m and m.group(1) in self._namen:
             s = f"{m.group(1)}={m.group(2)}"
@@ -138,7 +141,7 @@ class Parser:
             else:
                 wert, i = self._wert(s, j)
             wert = wert.strip("_")
-            if not wert:
+            if not wert or wert == NICHT_GLEICH:
                 self._fehler(erg, f"leerer wert bei {s!r}")
                 return False
             if isinstance(ziel, str) and ziel.startswith("?"):

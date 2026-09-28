@@ -145,6 +145,48 @@ def regel_alias(
     typer.echo(f"Alias {alias.upper()} → {merkmal.upper() if merkmal else '–'} ({status.upper()})")
 
 
+@regel_app.command("export")
+def regel_export(
+    out: Path | None = typer.Option(None, "--out", help="Datei (Default: out/regeln_arbeitsliste.xlsx)"),
+) -> None:
+    """Regel-Arbeitsliste (XLSX) für den Fachbereich: Regeln + Kürzel mit Vorkommen im letzten Lauf."""
+    from . import regelliste
+
+    ziel = out or config.out_dir() / "regeln_arbeitsliste.xlsx"
+    typer.echo(f"Arbeitsliste: {regelliste.exportiere(db.engine(), ziel)}")
+
+
+@regel_app.command("import")
+def regel_import(
+    datei: Path = typer.Argument(..., exists=True, dir_okay=False),
+    von: str = typer.Option(..., "--von", help="wer entschieden hat (Fachbereich/Name)"),
+    nur_pruefen: bool = typer.Option(False, "--pruefen", help="nur prüfen, nichts schreiben"),
+) -> None:
+    """Ausgefüllte Arbeitsliste übernehmen (prüft Eingaben und Rang-Eindeutigkeit vorab)."""
+    from . import regelliste
+
+    eng = db.engine()
+    regeln, aliasse, fehler = regelliste.lese(datei)
+    fehler += regelliste.pruefe_raenge(eng, regeln)
+    for a in regeln:
+        typer.echo(f"  Regel {a.merkmal}={a.wert}: {a.status} {a.rang or ''}")
+    for a in aliasse:
+        typer.echo(f"  Kürzel {a.alias} → {a.merkmal or '–'} ({a.status})")
+    if fehler:
+        for f in fehler:
+            typer.echo(f"FEHLER {f}", err=True)
+        raise typer.Exit(1)
+    if nur_pruefen:
+        typer.echo(
+            f"Prüfung ok: {len(regeln)} Regeln, {len(aliasse)} Kürzel – nichts geschrieben (--pruefen)"
+        )
+        return
+    regelliste.uebernehme(eng, regeln, aliasse, von)
+    typer.echo(
+        f"Übernommen: {len(regeln)} Regeln, {len(aliasse)} Kürzel (von {von}); wirkt ab dem nächsten Lauf"
+    )
+
+
 @app.command()
 def sql(
     abfrage: str = typer.Argument(..., help='SQL, z. B. "SELECT * FROM basis_bom.offene_faelle_ursache"'),

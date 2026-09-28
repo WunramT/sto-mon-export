@@ -11,16 +11,28 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 
-from .rules import BASIS, NICHT_BASIS, OFFEN, SITZHOEHE, Regelstand
+from .rules import BASIS, NICHT_BASIS, OFFEN, SITZHOEHE, SYSTEMWERT, Regelstand
 
 MULTI_TRENNER = re.compile(r"[/+]")
 
 PASST, PASST_NICHT, MANUELL = "passt", "passt_nicht", "manuell"
 
 
+NICHT_GLEICH = "≠"  # siehe parser.NICHT_GLEICH
+
+
+def negiert(wert: str) -> tuple[bool, str]:
+    """`≠HR` → (True, 'HR')."""
+    return (True, wert[1:]) if wert.startswith(NICHT_GLEICH) else (False, wert)
+
+
 def einzelwerte(wert: str) -> list[str]:
-    """`BS/FK`, `FK+BS` → ['BS', 'FK'] (D5)."""
-    return [t.strip() for t in MULTI_TRENNER.split(wert) if t.strip()]
+    """`BS/FK`, `FK+BS` → ['BS', 'FK'] (D5); ein Negationspräfix gehört nicht zum Wert."""
+    return [t.strip() for t in MULTI_TRENNER.split(negiert(wert)[1]) if t.strip()]
+
+
+def systemregel(kandidaten: list[dict]) -> bool:
+    return [k["wert"] for k in kandidaten] == [SYSTEMWERT]
 
 
 def _zahl(w: str) -> int | None:
@@ -67,6 +79,8 @@ def waehle(paare: Iterable[tuple[str, str]], regeln: Regelstand) -> Ebenenwahl:
             wahl.gewaehlt[m] = min(basis, key=lambda k: k["rang"])["wert"]
             if any(k["status"] in (None, OFFEN) for k in kand):
                 wahl.marker.append(f"offen_neben_rang:{m}")
+        elif systemregel(kand) and kand[0]["status"] == NICHT_BASIS:
+            wahl.gewaehlt[m] = None  # Systemregel gilt in der Basis nicht (Q20) → Positionen passen nicht
         else:
             wahl.marker.append(f"kein_rang_fuer:{m}")
     return wahl
@@ -80,9 +94,20 @@ def _unbekannt(m: str, w: str, regeln: Regelstand) -> bool:
 
 def pruefe_paar(merkmal: str, wert: str, wahl: Ebenenwahl, regeln: Regelstand) -> Pruefung:
     """Prüfung eines Paares gegen die Wahl der Ebene: enthalten-Semantik für Multi-Werte (D5)."""
+    ist_negiert, wert = negiert(wert)
+    if ist_negiert:  # „Merkmal ≠ Wert“ (Q47): Ergebnis der positiven Prüfung umkehren, MANUELL bleibt
+        p = pruefe_paar(merkmal, wert, wahl, regeln)
+        if p.ergebnis == MANUELL:
+            return p
+        g = wahl.gewaehlt.get(merkmal)
+        if p.ergebnis == PASST:
+            return Pruefung(PASST_NICHT, f"{merkmal}≠{wert}, gewählt ist {g}")
+        return Pruefung(PASST, f"{merkmal}≠{wert} (gewählt {g})")
     if merkmal not in wahl.gewaehlt:
         return Pruefung(MANUELL, f"kein_rang_fuer:{merkmal}")
     g = wahl.gewaehlt[merkmal]
+    if g is None:
+        return Pruefung(PASST_NICHT, f"Systemregel {merkmal} ist NICHT_BASIS")
     teile = einzelwerte(wert)
     if merkmal == SITZHOEHE:
         treffer = any(_zahl(t) is not None and _zahl(t) == _zahl(g) for t in teile)

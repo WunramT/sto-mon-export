@@ -91,3 +91,23 @@ def test_einzelwerte_und_seeds():
     assert einzelwerte("FK+BS") == ["FK", "BS"] and einzelwerte("HR") == ["HR"]
     wahl = waehle([("FUNKTION", "BK"), ("FUNKTION", "MANUEL")], seed_regelstand())
     assert wahl.gewaehlt == {"FUNKTION": "MANUEL"}
+
+
+def test_ungleich():
+    wahl = waehle([("SITZQUALI", "≠FK"), ("SITZQUALI", "HR")], RS)
+    assert wahl.gewaehlt == {"SITZQUALI": "HR"}  # FK kommt als Wert vor, HR gewinnt
+    assert pruefe_paar("SITZQUALI", "≠FK", wahl, RS).ergebnis == PASST
+    assert pruefe_paar("SITZQUALI", "≠HR", wahl, RS).ergebnis == PASST_NICHT
+    assert pruefe_paar("MOTOR", "≠M1", waehle([("MOTOR", "≠M1")], RS), RS).ergebnis == MANUELL  # kein Rang
+
+
+def test_systemregel_nicht_basis_schliesst_aus():
+    rs = Regelstand.aus_listen(
+        [Regel("PP_A", "vorhanden", "NICHT_BASIS"), Regel("PP_B", "vorhanden", "BASIS", 1)]
+    )
+    wahl = waehle([("PP_A", "vorhanden"), ("PP_B", "vorhanden")], rs)
+    assert wahl.marker == []
+    assert pruefe_paar("PP_A", "vorhanden", wahl, rs).ergebnis == PASST_NICHT
+    assert pruefe_paar("PP_B", "vorhanden", wahl, rs).ergebnis == PASST
+    # gewöhnliche Merkmale: nur NICHT_BASIS bleibt D4 (Marker, manuell)
+    assert waehle([("MOTOR", "M1")], RS).marker == ["kein_rang_fuer:MOTOR"]

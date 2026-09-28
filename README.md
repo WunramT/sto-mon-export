@@ -17,6 +17,10 @@ basis-bom export [--lauf N] [--matnr …]         # SAP-Format (D19)
 basis-bom review-export <matnr>…                # Review-Blatt (XLSX) pro Root-Material
 basis-bom review-import <datei.xlsx> --reviewer <name>
 basis-bom regress [--lauf N]
+basis-bom regel export                          # Regel-Arbeitsliste (XLSX) für den Fachbereich
+basis-bom regel import <datei.xlsx> --von <name> [--pruefen]
+basis-bom regel liste [MERKMAL] | regel setzen … | regel alias …
+basis-bom sql "<SELECT …>" [--csv datei]
 pytest                                          # Tests (eigene Datenbank <name>_test)
 ```
 
@@ -35,3 +39,13 @@ Urteilen: `notebooks/90_debug_material.ipynb` (Materialnummer eintragen, alles a
 | `sql/schema`, `sql/views`, `sql/checks` | DDL + Seeds, Reports, Prüfungen |
 | `notebooks/` | jupytext-Paare (`.py` editieren, `.ipynb` öffnen) |
 | `tests/fixtures`, `tests/golden` | synthetische Mini-SAP-Tabellen, erwartete Ergebnisse |
+
+## Rollen
+
+Die Anwendung entscheidet nichts fachlich. Der Fachbereich legt fest, welche Werte Basis sind; die Regeln wachsen
+Beispiel für Beispiel (D24). Kreislauf:
+
+1. `basis-bom run --matnr …` → Export, Review-Blatt, Debug-Notebook
+2. `basis-bom regel export` → Arbeitsliste: OFFEN-Werte und unbekannte Kürzel, die im Lauf vorkamen, stehen oben
+3. Fachbereich füllt „Neuer Status“ / „Neuer Rang“ bzw. Review-Urteile aus
+4. `basis-bom regel import …` bzw. `basis-bom review-import …` → nächster Lauf

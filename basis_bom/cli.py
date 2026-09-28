@@ -160,6 +160,31 @@ def ui(
 
 
 @app.command()
+def roots(beispiele: int = typer.Option(5, "--beispiele", help="Beispiel-Materialien je Grund")) -> None:
+    """Warum Root-Materialien nicht aufgelöst werden: Anzahl je Grund mit Beispielen."""
+    import re
+    from collections import defaultdict
+
+    from . import lauf, rules
+    from .explode import Aufloeser
+    from .source import SapSource
+
+    eng = db.engine()
+    src = SapSource.from_db(eng)
+    a = Aufloeser(src, rules.lade_regelstand(eng))
+    alle, aus = lauf.roots_aus_db(eng)
+    gruppen: dict[str, list[str]] = defaultdict(list)
+    for r in alle:
+        g = "vom Fachbereich ausgeschlossen (root_ausschluss)" if r in set(aus) else a.root_pruefung(r)
+        gruppen[re.sub(r"\[.*\]", "[…]", g) if g else "auflösbar"].append(r)
+    typer.echo(f"{len(alle)} Root-Materialien, {len(src.stlnr_pro_material)} Materialien mit Stückliste (MAST)")
+    for g, ms in sorted(gruppen.items(), key=lambda x: -len(x[1])):
+        typer.echo(f"{len(ms):7}  {g}   z. B. {', '.join(ms[:beispiele])}")
+    if a.ohne_stammdaten:
+        typer.echo(f"        davon ohne MARA-Zeile (KZKFG nicht prüfbar): {len(a.ohne_stammdaten)}")
+
+
+@app.command()
 def sql(
     abfrage: str = typer.Argument(..., help='SQL, z. B. "SELECT * FROM basis_bom.offene_faelle_ursache"'),
     csv_datei: Path | None = typer.Option(None, "--csv", help="Ergebnis zusätzlich als CSV speichern"),

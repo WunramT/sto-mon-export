@@ -13,17 +13,22 @@ dependencies = [
     "psycopg[binary]",
     "typer",
     "pydantic",
-    "openpyxl",  # XLSX-Exporte lesen, Review-Blätter schreiben
+    "openpyxl",  # XLSX-Exporte lesen
+    "fastapi",  # Web-Oberfläche für den Fachbereich (basis-bom ui)
+    "uvicorn",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "jupyterlab", "jupytext", "ruff", "ipykernel"]
+dev = ["pytest", "jupyterlab", "jupytext", "ruff", "ipykernel", "httpx", "playwright"]
 
 [project.scripts]
 basis-bom = "basis_bom.cli:app"
 
 [tool.setuptools]
-packages = ["basis_bom"]
+packages = ["basis_bom", "basis_bom.ui"]
+
+[tool.setuptools.package-data]
+"basis_bom.ui" = ["static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

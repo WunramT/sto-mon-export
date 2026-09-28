@@ -250,3 +250,60 @@ def setze_alias(
             ),
             {"a": alias, "m": merkmal, "s": status, "t": jetzt, "v": geaendert_von},
         )
+
+
+# ---------------------------------------------------------------------------------------------------------
+# Mehrere Änderungen auf einmal (Web-Oberfläche „Übernehmen“)
+
+
+@dataclass
+class Aenderung:
+    merkmal: str
+    wert: str
+    status: str
+    rang: int | None
+    begruendung: str | None
+
+
+@dataclass
+class AliasAenderung:
+    alias: str
+    merkmal: str | None
+    status: str
+
+
+def pruefe_raenge(eng: Engine, aenderungen: list[Aenderung]) -> list[str]:
+    """D1: nach Anwendung aller Änderungen ist jeder BASIS-Rang je Merkmal eindeutig."""
+    rs = lade_regelstand(eng)
+    stand = {(r.merkmal, r.wert): (r.status, r.rang) for r in rs.regeln.values()}
+    for a in aenderungen:
+        stand[(a.merkmal, a.wert)] = (a.status, a.rang)
+    belegt: dict[tuple[str, int], list[str]] = {}
+    for (m, w), (s, rang) in stand.items():
+        if s == BASIS:
+            belegt.setdefault((m, rang), []).append(w)
+    return [f"{m}: Rang {rang} doppelt ({', '.join(sorted(ws))})" for (m, rang), ws in sorted(belegt.items())
+            if len(ws) > 1]  # fmt: skip
+
+
+def uebernehme(eng: Engine, regeln: list[Aenderung], aliasse: list[AliasAenderung], von: str) -> None:
+    """Alle Änderungen in einer Transaktion: erst alte Zeilen schließen, dann neue einfügen (Rangtausch möglich)."""
+    with eng.begin() as con:
+        t = con.execute(sa.text("SELECT clock_timestamp()")).scalar()
+        for a in regeln:
+            con.execute(sa.text("UPDATE basis_bom.regel SET gueltig_bis = :t WHERE merkmal = :m AND wert = :w "
+                                "AND gueltig_bis IS NULL"), {"t": t, "m": a.merkmal, "w": a.wert})  # fmt: skip
+        for a in regeln:
+            con.execute(
+                sa.text("INSERT INTO basis_bom.regel (merkmal, wert, status, rang, begruendung, gueltig_von, "
+                        "geaendert_von) VALUES (:m, :w, :s, :r, :b, :t, :v)"),
+                {"m": a.merkmal, "w": a.wert, "s": a.status, "r": a.rang, "b": a.begruendung, "t": t, "v": von},
+            )  # fmt: skip
+        for a in aliasse:
+            con.execute(sa.text("UPDATE basis_bom.alias SET gueltig_bis = :t WHERE alias = :a AND gueltig_bis IS NULL"),
+                        {"t": t, "a": a.alias})  # fmt: skip
+            con.execute(
+                sa.text("INSERT INTO basis_bom.alias (alias, merkmal, status, gueltig_von, geaendert_von) "
+                        "VALUES (:a, :m, :s, :t, :v)"),
+                {"a": a.alias, "m": a.merkmal, "s": a.status, "t": t, "v": von},
+            )  # fmt: skip

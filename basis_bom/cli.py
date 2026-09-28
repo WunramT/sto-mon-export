@@ -145,46 +145,18 @@ def regel_alias(
     typer.echo(f"Alias {alias.upper()} → {merkmal.upper() if merkmal else '–'} ({status.upper()})")
 
 
-@regel_app.command("export")
-def regel_export(
-    out: Path | None = typer.Option(None, "--out", help="Datei (Default: out/regeln_arbeitsliste.xlsx)"),
+@app.command()
+def ui(
+    host: str = typer.Option("0.0.0.0", "--host"),
+    port: int = typer.Option(8000, "--port"),
 ) -> None:
-    """Regel-Arbeitsliste (XLSX) für den Fachbereich: Regeln + Kürzel mit Vorkommen im letzten Lauf."""
-    from . import regelliste
+    """Web-Oberfläche für den Fachbereich starten (http://localhost:8000)."""
+    import uvicorn
 
-    ziel = out or config.out_dir() / "regeln_arbeitsliste.xlsx"
-    typer.echo(f"Arbeitsliste: {regelliste.exportiere(db.engine(), ziel)}")
+    from .ui.app import erstelle_app
 
-
-@regel_app.command("import")
-def regel_import(
-    datei: Path = typer.Argument(..., exists=True, dir_okay=False),
-    von: str = typer.Option(..., "--von", help="wer entschieden hat (Fachbereich/Name)"),
-    nur_pruefen: bool = typer.Option(False, "--pruefen", help="nur prüfen, nichts schreiben"),
-) -> None:
-    """Ausgefüllte Arbeitsliste übernehmen (prüft Eingaben und Rang-Eindeutigkeit vorab)."""
-    from . import regelliste
-
-    eng = db.engine()
-    regeln, aliasse, fehler = regelliste.lese(datei)
-    fehler += regelliste.pruefe_raenge(eng, regeln)
-    for a in regeln:
-        typer.echo(f"  Regel {a.merkmal}={a.wert}: {a.status} {a.rang or ''}")
-    for a in aliasse:
-        typer.echo(f"  Kürzel {a.alias} → {a.merkmal or '–'} ({a.status})")
-    if fehler:
-        for f in fehler:
-            typer.echo(f"FEHLER {f}", err=True)
-        raise typer.Exit(1)
-    if nur_pruefen:
-        typer.echo(
-            f"Prüfung ok: {len(regeln)} Regeln, {len(aliasse)} Kürzel – nichts geschrieben (--pruefen)"
-        )
-        return
-    regelliste.uebernehme(eng, regeln, aliasse, von)
-    typer.echo(
-        f"Übernommen: {len(regeln)} Regeln, {len(aliasse)} Kürzel (von {von}); wirkt ab dem nächsten Lauf"
-    )
+    typer.echo(f"Basis-Stückliste: http://localhost:{port}  (Strg+C beendet)")
+    uvicorn.run(erstelle_app(db.engine()), host=host, port=port, log_level="warning")
 
 
 @app.command()
@@ -212,12 +184,11 @@ def sql(
 def run(
     matnr: list[str] | None = typer.Option(None, "--matnr", help="nur diese Root-Materialien (mehrfach)"),
     out: Path | None = typer.Option(None, "--out", help="Ausgabeordner (Default: out/)"),
-    ohne_review: bool = typer.Option(False, "--ohne-review", help="keine Review-Blätter schreiben"),
 ) -> None:
-    """Prototyp-Lauf (D23): check → Auflösung → regress (nur Meldung) → export + Review-Blätter."""
+    """Prototyp-Lauf (D23): check → Auflösung → regress (nur Meldung) → SAP-Format-Export."""
     from . import pipeline
 
-    b = pipeline.run(db.engine(), matnr, out, review_blaetter=not ohne_review)
+    b = pipeline.run(db.engine(), matnr, out)
     rot = b.pruefungen[b.pruefungen["ok"] == False]  # noqa: E712
     typer.echo(f"Lauf {b.lauf_id}: Prüfungen {len(b.pruefungen)} ({len(rot)} rot)")
     for r in rot.itertuples():
@@ -281,43 +252,6 @@ def export(
     df = lauf.lade_aufloesung(eng, lid, matnr)
     for p in exp.exportiere(df, SapSource.from_db(eng), _ausgabe(lid, out)):
         typer.echo(f"Export: {p}")
-
-
-@app.command("review-export")
-def review_export(
-    matnr: list[str] = typer.Argument(..., help="Root-Materialien"),
-    lauf_id: int | None = typer.Option(None, "--lauf", help="Default: letzter Lauf"),
-    out: Path | None = typer.Option(None, "--out"),
-) -> None:
-    """Review-Blatt (XLSX) pro Root-Material für den Fachbereich (D24)."""
-    from . import lauf, review
-    from .source import SapSource
-
-    eng = db.engine()
-    lid = _lauf(lauf_id)
-    df = lauf.lade_aufloesung(eng, lid, matnr)
-    src, stat = SapSource.from_db(eng), lauf.lade_statistik(eng, lid)
-    for m in matnr:
-        m = m.strip().lstrip("0")
-        if df[df["root_matnr"] == m].empty:
-            typer.echo(f"{m}: nicht im Lauf {lid}", err=True)
-            continue
-        p = review.review_blatt(df, src, lid, m, stat, _ausgabe(lid, out) / m / f"review_{m}.xlsx")
-        typer.echo(f"Review-Blatt: {p}")
-
-
-@app.command("review-import")
-def review_import(
-    datei: list[Path] = typer.Argument(..., exists=True, dir_okay=False),
-    reviewer: str = typer.Option(..., "--reviewer", help="Name des Prüfers"),
-) -> None:
-    """Ausgefüllte Review-Blätter nach `basis_bom.review` (vollständig richtig → `bestaetigt`)."""
-    from . import review
-
-    for d in datei:
-        erg = review.importiere(db.engine(), d, reviewer)
-        typer.echo(f"{d.name}: {erg['zeilen']} Urteile, {erg['ohne_urteil']} ohne Urteil, bestätigt: "
-                   f"{', '.join(erg['bestaetigt']) or '–'}")  # fmt: skip
 
 
 @app.command()

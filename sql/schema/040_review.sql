@@ -23,3 +23,5 @@ CREATE TABLE IF NOT EXISTS basis_bom.bestaetigt (
 );
 
 ALTER TABLE basis_bom.review ADD COLUMN IF NOT EXISTS status text;
+-- Web-Oberfläche: Urteil bezieht sich auf die Zeile (Pfad) eines Laufs; ergänzte Materialien („fehlt“) ohne Status.
+ALTER TABLE basis_bom.review ADD COLUMN IF NOT EXISTS pfad text;

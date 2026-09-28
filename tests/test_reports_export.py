@@ -1,13 +1,12 @@
-"""Phase 7: Export (D19, Golden-File byteweise), Review-Blatt, Regression (D23), Views und Checks."""
+"""Phase 7: Export (D19, Golden-File byteweise), Views und Checks. Review/Regression: tests/test_ui.py."""
 
 import os
 from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
-from openpyxl import load_workbook
 
-from basis_bom import checks, export, lauf, loader, regress, review, rules
+from basis_bom import checks, export, lauf, loader, rules
 from basis_bom.explode import Aufloeser
 from basis_bom.source import SapSource
 
@@ -32,53 +31,6 @@ def test_export_golden(fixture_src, tmp_path):
     assert kopf == "Werk;Material;ObjektId;Materialkurztext DE;Menge;ME;PTp;Disp.;Warengrp;MArt;SoB"
     assert root.startswith("4000;90000001;;Sessel STO Basis;;;;")
     assert len(pos) == 10  # nur basis/unbedingt
-
-
-def _ausfuellen(pfad: Path, urteil: str = "richtig") -> None:
-    wb = load_workbook(pfad)
-    ws = wb[review.BLATT]
-    spalte = review.SPALTEN.index("Urteil") + 1
-    for r in range(2, ws.max_row + 1):
-        ws.cell(r, spalte).value = urteil
-    wb.save(pfad)
-
-
-def test_review_regression_wird_rot(fixture_db, tmp_path):
-    eng = fixture_db
-    lid, erg = lauf.fuehre_aufloesung_aus(eng)
-    df = lauf.lade_aufloesung(eng, lid)
-    assert len(df) == len(erg.zeilen) and isinstance(df.iloc[0]["spur"], dict)
-    blatt = review.review_blatt(df, SapSource.from_db(eng), lid, "90000001", lauf.lade_statistik(eng, lid),
-                                tmp_path / "review.xlsx")  # fmt: skip
-    ws = load_workbook(blatt)[review.BLATT]
-    assert ws.max_row - 1 == (df["root_matnr"] == "90000001").sum()
-    assert ws.row_dimensions[ws.max_row].hidden  # ausgeschlossene am Ende eingeklappt
-
-    _ausfuellen(blatt)
-    imp = review.importiere(eng, blatt, "test")
-    assert imp["bestaetigt"] == ["90000001"] and imp["ohne_urteil"] == 0
-
-    assert regress.regress(eng, lid).empty
-    assert lauf.lauf_status(eng, lid) == "regression_ok"
-
-    # absichtlich geänderte Regel: FUNKTION X nicht mehr Basis → MANUEL gewinnt auf Ebene 1
-    rules.setze_regel(eng, "FUNKTION", "X", "NICHT_BASIS", geaendert_von="test")
-    try:
-        lid2, _ = lauf.fuehre_aufloesung_aus(eng)
-        abw = regress.regress(eng, lid2)
-        assert not abw.empty and set(abw["art"]) >= {"fehlt_im_lauf", "zusaetzlich_im_lauf"}
-        assert lauf.lauf_status(eng, lid2) == "regression_fehlgeschlagen"
-    finally:
-        rules.setze_regel(eng, "FUNKTION", "X", "BASIS", rang=1, geaendert_von="test")
-
-
-def test_review_import_ungueltiges_urteil(fixture_db, tmp_path):
-    lid, _ = lauf.fuehre_aufloesung_aus(fixture_db)
-    df = lauf.lade_aufloesung(fixture_db, lid)
-    blatt = review.review_blatt(df, SapSource.from_db(fixture_db), lid, "90000001", {}, tmp_path / "r.xlsx")
-    _ausfuellen(blatt, "vielleicht")
-    with pytest.raises(ValueError, match="unbekannt"):
-        review.importiere(fixture_db, blatt, "test")
 
 
 def test_views(fixture_db):

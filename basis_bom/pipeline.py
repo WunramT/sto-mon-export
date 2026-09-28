@@ -1,5 +1,7 @@
 """Prototyp-Lauf nach D23: Konsistenzprüfungen → Auflösung → Regression (meldet nur) → Export.
 
+Bewertet und bestätigt wird in der Web-Oberfläche (`basis-bom ui`).
+
 Prod-Betrieb (Node-RED-Trigger, harte Regression, Betriebs-Dockerfile) ist bewusst nicht Teil des Prototyps.
 """
 
@@ -14,7 +16,7 @@ from pathlib import Path
 import pandas as pd
 from sqlalchemy.engine import Engine
 
-from . import checks, config, export, lauf, regress, review
+from . import checks, config, export, lauf, regress
 from .source import SapSource
 
 log = logging.getLogger(__name__)
@@ -30,9 +32,7 @@ class Laufbericht:
     sekunden: dict[str, float] = field(default_factory=dict)
 
 
-def run(
-    eng: Engine, matnr: Iterable[str] | None = None, out: Path | None = None, review_blaetter: bool = True
-):
+def run(eng: Engine, matnr: Iterable[str] | None = None, out: Path | None = None) -> Laufbericht:
     t0 = time.perf_counter()
     zeiten: dict[str, float] = {}
     pr = checks.pruefe(eng)
@@ -54,12 +54,6 @@ def run(
     df = erg.df()
     src = SapSource.from_db(eng)
     dateien = export.exportiere(df, src, ziel)
-    if review_blaetter:
-        stat = lauf.lade_statistik(eng, lauf_id)
-        for root in sorted(set(df["root_matnr"])):
-            dateien.append(
-                review.review_blatt(df, src, lauf_id, root, stat, ziel / root / f"review_{root}.xlsx")
-            )
     zeiten["export"] = time.perf_counter() - t
     zeiten["gesamt"] = time.perf_counter() - t0
     lauf.beende_lauf(

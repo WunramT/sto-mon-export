@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Basis-Stückliste</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header class="kopf">
+    <div class="marke">
+      <span class="logo" aria-hidden="true">◧</span>
+      <div>
+        <div class="titel">Basis-Stückliste</div>
+        <div class="untertitel" id="meta">Lädt …</div>
+      </div>
+    </div>
+    <div class="kopf-rechts">
+      <button class="knopf leise" id="hilfe-knopf" type="button">Hilfe</button>
+      <button class="nutzer" id="nutzer-knopf" type="button" title="Name ändern"></button>
+    </div>
+  </header>
+
+  <div class="entwurf-leiste" id="entwurf-leiste" hidden>
+    <div class="entwurf-info">
+      <strong>Entwurf</strong>
+      <span id="entwurf-text"></span>
+      <span class="entwurf-hinweis">Nur für dich sichtbar, bis du übernimmst.</span>
+    </div>
+    <div class="entwurf-aenderungen" id="entwurf-aenderungen"></div>
+    <div class="entwurf-knoepfe">
+      <button class="knopf" id="auswirkung-knopf" type="button">Auswirkung auf alle Materialien</button>
+      <button class="knopf leise" id="verwerfen-knopf" type="button">Verwerfen</button>
+      <button class="knopf haupt" id="uebernehmen-knopf" type="button">Übernehmen …</button>
+    </div>
+  </div>
+
+  <main class="rahmen">
+    <aside class="spalte links" aria-label="Materialien">
+      <div class="suche">
+        <input id="material-suche" type="search" placeholder="Material suchen (Nummer oder Text)" autocomplete="off">
+      </div>
+      <div class="zustand-filter" id="zustand-filter" role="group" aria-label="Filter nach Bearbeitungsstand"></div>
+      <ul class="materialliste" id="materialliste"></ul>
+    </aside>
+
+    <section class="spalte mitte" aria-label="Arbeitsbereich">
+      <nav class="reiter" role="tablist">
+        <button role="tab" class="reiter-knopf aktiv" data-ansicht="stueckliste" type="button">Stückliste</button>
+        <button role="tab" class="reiter-knopf" data-ansicht="regeln" type="button">Regeln <span class="zahl" id="offen-zahl"></span></button>
+        <button role="tab" class="reiter-knopf" data-ansicht="auswirkung" type="button">Auswirkung</button>
+      </nav>
+      <div id="ansicht-stueckliste" class="ansicht"></div>
+      <div id="ansicht-regeln" class="ansicht" hidden></div>
+      <div id="ansicht-auswirkung" class="ansicht" hidden></div>
+    </section>
+
+    <aside class="spalte rechts" id="details" aria-label="Details"></aside>
+  </main>
+
+  <div class="dialog-hintergrund" id="dialog" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-titel">
+      <h2 id="dialog-titel"></h2>
+      <div id="dialog-inhalt"></div>
+      <div class="dialog-knoepfe" id="dialog-knoepfe"></div>
+    </div>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -58,8 +58,14 @@
         </div>
         <v-btn icon="mdi-close" size="small" variant="text" aria-label="Auswahl aufheben" @click="a.auswahl = null" />
       </div>
-      <div class="my-2"><StatusPille :status="p.status" :vorher="p.vorher" /></div>
-      <div class="erklaerung">{{ p.erklaerung }}</div>
+      <div class="my-2"><StatusPille :status="p.status" :vorher="p.vorher" :manuell="a.manuell(p)" /></div>
+      <div class="erklaerung">
+        {{ p.erklaerung }}
+        <div v-if="a.manuell(p)" class="manuell-hinweis">
+          <v-icon icon="mdi-account-check-outline" size="15" />
+          Manuell entschieden: {{ a.manuell(p) === 'rein' ? 'kommt in die Basis-Stückliste' : 'kommt nicht in die Basis-Stückliste' }} (gilt für dieses Material; die Regelfrage bleibt für andere offen).
+        </div>
+      </div>
 
       <section v-if="p.fragen.length" class="abschnitt">
         <h3 class="abschnitt-titel">Offene Fragen</h3>
@@ -181,6 +187,7 @@ watch(() => a.fokusMerkmal, (m) => { if (m && p.value) nextTick(() => fokus(m)) 
 .unter { font-size: 12.5px; color: var(--text-2); margin: 2px 0 8px; }
 .erklaerung { font-size: 13.5px; line-height: 1.5; padding: 10px 12px; border-radius: 8px; background: #fff; border: 1px solid var(--linie); margin-bottom: 16px; }
 .abschnitt { margin-bottom: 18px; }
+.manuell-hinweis { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--linie-2); font-size: 12.5px; color: var(--text-2); display: flex; gap: 6px; align-items: flex-start; }
 .frage { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; padding: 8px 10px; border-radius: 8px; background: var(--s-manuell-bg); color: #6b4200; font-size: 13px; margin-bottom: 6px; }
 .bedingung { padding: 8px 10px; border: 1px solid var(--linie); border-radius: 8px; background: #fff; margin-bottom: 6px; }
 .roh { font-size: 12px; font-weight: 600; margin-bottom: 4px; word-break: break-all; }
@@ -199,4 +206,5 @@ watch(() => a.fokusMerkmal, (m) => { if (m && p.value) nextTick(() => fokus(m)) 
 .link:hover { text-decoration: underline; }
 .gross :deep(.bew) { width: auto; padding: 4px 10px; }
 .gross :deep(.bew .txt) { display: inline; }
+.gross :deep(.bew .txt-kurz) { display: none; }
 </style>

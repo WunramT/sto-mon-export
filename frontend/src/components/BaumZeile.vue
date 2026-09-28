@@ -21,7 +21,7 @@
       </div>
     </div>
     <div class="menge mono">{{ fmtMenge(p.menge_kum, p.meins) }}</div>
-    <div><StatusPille :status="p.status" :vorher="p.vorher" /></div>
+    <div><StatusPille :status="p.status" :vorher="p.vorher" :manuell="a.manuell(p)" /></div>
     <BewertungKnoepfe :p="p" im-baum />
   </div>
 </template>

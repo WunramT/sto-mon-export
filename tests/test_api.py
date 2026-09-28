@@ -127,7 +127,8 @@ def test_uebernehmen_mit_konflikt(client, fixture_db):
     # doppelter Rang wird abgelehnt
     doppelt = {"regeln": [{"merkmal": "SITZQUALI", "wert": "BS", "status": "BASIS", "rang": 1,
                            "vorher": {"status": "OFFEN", "rang": None}}]}  # fmt: skip
-    assert client.post("/api/uebernehmen", json={"entwurf": doppelt, "von": "T"}).status_code == 400
+    d = client.post("/api/uebernehmen", json={"entwurf": doppelt, "von": "T", "begruendung": "Rang eins bitte"})
+    assert d.status_code == 409 and d.json()["konflikte"][0]["art"] == "rang"
     rules.setze_regel(fixture_db, "SITZQUALI", "FK", "OFFEN", geaendert_von="test")
 
 
@@ -205,6 +206,35 @@ def test_manuelle_entscheidung_bestaetigen_und_export(client, regeln_sichern):
     assert client.post("/api/bestaetigen/90000006", json={"von": "Erika"}).status_code == 200
     csv = client.get("/api/export/90000006").text
     assert ";10000102;" in csv and ";10000016;" not in csv and ";10000999;" in csv
+
+
+def test_neues_kuerzel_uebernehmen(client, regeln_sichern, fixture_db):
+    """Kürzel ohne Zuordnung kommen als OFFEN in die Oberfläche; Übernehmen darf daran keinen Konflikt sehen."""
+    k = next(x for x in client.post("/api/regeln", json={"entwurf": None}).json()["kuerzel"] if x["alias"] == "ZZ")
+    e = {"aliasse": [{"alias": "ZZ", "merkmal": "SITZTIEFE", "status": "BASIS",
+                      "vorher": {"merkmal": k["merkmal"], "status": k["status"]}}]}  # fmt: skip
+    r = client.post("/api/uebernehmen", json={"entwurf": e, "von": "T", "begruendung": "ZZ ist Sitztiefe"})
+    assert r.status_code == 200, r.text
+    assert rules.lade_regelstand(fixture_db).aliasse["ZZ"].merkmal == "SITZTIEFE"
+    import sqlalchemy as sa
+
+    with fixture_db.begin() as con:  # Alias wieder entfernen (regeln_sichern setzt nur Regeln zurück)
+        con.execute(sa.text("DELETE FROM basis_bom.alias WHERE alias = 'ZZ'"))
+
+
+def test_widerspruch_und_export_unter_ausgeschlossener_baugruppe(client, regeln_sichern):
+    d = client.post("/api/material/90000001", json={"entwurf": None}).json()
+    pos = {p["matnr"]: p for p in d["positionen"] if p["matnr"]}
+    urteile = {p["id"]: {"urteil": "richtig"} for p in d["positionen"] if p["status"] not in ("manuell_prüfen", "unterhalb_manuell")}
+    for p in d["positionen"]:
+        if p["status"] in ("manuell_prüfen", "unterhalb_manuell"):
+            urteile[p["id"]] = {"urteil": "fehlt"}
+    urteile[pos["10000006"]["id"]] = {"urteil": "gehoert_nicht_rein"}  # Baugruppe raus, Kinder 10000201/202 „rein“
+    assert client.post("/api/review/90000001", json={"von": "E", "urteile": urteile}).status_code == 200
+    b = client.post("/api/bestaetigen/90000001", json={"von": "E"})
+    assert b.status_code == 400 and "ausgeschlossenen Baugruppe" in b.json()["fehler"]
+    csv = client.get("/api/export/90000001").text
+    assert ";10000201;" not in csv and ";10000202;" not in csv and ";10000102;" in csv
 
 
 def test_uebernehmen_braucht_begruendung(client):

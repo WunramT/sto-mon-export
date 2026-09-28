@@ -24,7 +24,8 @@
       <p class="text-body-2 mb-2">Seit Sie angefangen haben, wurden folgende Werte von jemand anderem geändert:</p>
       <ul class="liste mb-3">
         <li v-for="(k, i) in konflikte" :key="i">
-          <template v-if="k.art === 'regel'">{{ a.mName(k.merkmal) }} = {{ k.wert }}: jetzt {{ REGEL_STATUS[k.jetzt.status] }}<template v-if="k.jetzt.rang"> (Rang {{ k.jetzt.rang }})</template></template>
+          <template v-if="k.art === 'rang'">{{ a.mName(k.merkmal) }}: die Rangfolge wurde inzwischen geändert (zwei Werte hätten denselben Rang) – die Ränge Ihres Entwurfs werden neu vergeben.</template>
+          <template v-else-if="k.art === 'regel'">{{ a.mName(k.merkmal) }} = {{ k.wert }}: jetzt {{ REGEL_STATUS[k.jetzt.status] }}<template v-if="k.jetzt.rang"> (Rang {{ k.jetzt.rang }})</template></template>
           <template v-else>Kürzel {{ k.alias }}: jetzt {{ k.jetzt.merkmal ? a.mName(k.jetzt.merkmal) : 'ohne Merkmal' }}</template>
         </li>
       </ul>

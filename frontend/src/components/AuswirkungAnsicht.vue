@@ -21,7 +21,7 @@
       <div v-if="!w.materialien.length" class="leer-hinweis">
         <v-icon icon="mdi-check-circle-outline" size="36" color="success" class="mb-2" />
         <p class="mb-1">Keine Basis-Stückliste ändert sich.</p>
-        <p class="text-body-2">Der Entwurf betrifft nur Werte, die nirgends den Ausschlag geben. Übernehmen ist unkritisch.</p>
+        <p class="text-body-2">Der Entwurf gibt auf keiner der {{ w.geprueft }} neu gerechneten Stücklisten den Ausschlag (Stand: übernommene Regeln jetzt).</p>
       </div>
       <v-table v-else density="comfortable" class="tabelle" fixed-header height="100%">
         <thead>

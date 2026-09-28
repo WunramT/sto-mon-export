@@ -5,6 +5,11 @@
     <LadeBildschirm v-if="!bereit" :info="a.datenstand" :fehler="startFehler" @neu="pruefeDatenstand" />
     <template v-else>
       <EntwurfLeiste />
+      <div v-if="a.regelnVeraltet" class="veraltet" role="status">
+        <v-icon icon="mdi-account-sync-outline" size="18" />
+        Kolleg:innen haben inzwischen Regeln übernommen – Ihre Ansicht zeigt noch den alten Stand.
+        <v-btn size="small" color="info" variant="flat" class="ml-2" @click="a.aktualisiereRegeln()">Aktualisieren</v-btn>
+      </div>
       <div class="raster" :class="{ 'mit-entwurf': !a.entwurfLeer }">
         <MaterialListe class="spalte links" />
         <section class="spalte mitte" aria-label="Arbeitsbereich">
@@ -82,7 +87,8 @@ function oeffneAusRoute(erstesSonst = false) {
   const m = route.params.matnr as string | undefined
   if (m) { if (m !== a.matnr) a.oeffneMaterial(m) ; return }
   if (!erstesSonst) return
-  const erstes = (a.materialien.find((x) => x.zustand === 'offen' || x.zustand === 'in_arbeit') || a.materialien[0])?.matnr
+  const gemerkt = a.startKontext.matnr && a.materialien.some((x) => x.matnr === a.startKontext.matnr) ? a.startKontext.matnr : null
+  const erstes = gemerkt || (a.materialien.find((x) => x.zustand === 'offen' || x.zustand === 'in_arbeit') || a.materialien[0])?.matnr
   if (erstes) router.replace({ name: 'material', params: { matnr: erstes } })
 }
 
@@ -93,8 +99,20 @@ function vorVerlassen(ev: BeforeUnloadEvent) {
   if (a.reviewStand.ungespeichert) { ev.preventDefault(); ev.returnValue = '' }
 }
 
-onMounted(() => { pruefeDatenstand(); window.addEventListener('beforeunload', vorVerlassen) })
-onBeforeUnmount(() => { clearTimeout(timer); window.removeEventListener('beforeunload', vorVerlassen) })
+let regelTimer: number | undefined
+const beiFokus = () => { if (document.visibilityState === 'visible') a.pruefeRegelstand() }
+onMounted(() => {
+  pruefeDatenstand()
+  window.addEventListener('beforeunload', vorVerlassen)
+  document.addEventListener('visibilitychange', beiFokus)
+  regelTimer = window.setInterval(() => a.pruefeRegelstand(), 30000)
+})
+onBeforeUnmount(() => {
+  clearTimeout(timer)
+  window.clearInterval(regelTimer)
+  window.removeEventListener('beforeunload', vorVerlassen)
+  document.removeEventListener('visibilitychange', beiFokus)
+})
 
 // Neu-Laden aus dem Datenstand-Dialog: Status verfolgen
 watch(() => a.datenstand?.zustand, (z, alt) => {
@@ -111,6 +129,7 @@ watch(() => a.datenstand?.zustand, (z, alt) => {
 .links { border-right: 1px solid var(--linie); }
 .rechts { border-left: 1px solid var(--linie); background: var(--flaeche-2); }
 .mitte { background: var(--flaeche); }
+.veraltet { flex: none; display: flex; align-items: center; gap: 8px; padding: 6px 16px; background: #e4eefa; color: #1d4f8a; font-size: 13px; border-bottom: 1px solid #c9dcf3; }
 .reiter { border-bottom: 1px solid var(--linie); flex: none; }
 .reiter :deep(.v-tab) { text-transform: none; letter-spacing: 0; font-weight: 550; }
 .ansicht { flex: 1; min-height: 0; display: flex; flex-direction: column; }

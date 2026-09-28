@@ -16,8 +16,8 @@
 
     <template v-else>
       <v-progress-linear :active="a.laedt" indeterminate color="primary" height="2" absolute />
-      <v-alert v-if="a.laedt && langsam" type="info" variant="tonal" density="compact" class="langsam">Der Server antwortet gerade langsam – die Berechnung läuft weiter …</v-alert>
       <header class="kopf">
+        <v-alert v-if="a.laedt && langsam" type="info" variant="tonal" density="compact" class="mb-2 hinweis-mehrzeilig" icon="mdi-timer-sand">Der Server antwortet gerade langsam – die Berechnung läuft weiter …</v-alert>
         <div class="titelzeile">
           <div class="min-w-0">
             <h1 class="mat-titel"><span class="mono">{{ d.matnr }}</span> <span class="kt">{{ d.kurztext }}</span></h1>
@@ -39,15 +39,15 @@
 
         <div class="kennzahlen">
           <button type="button" class="kennzahl k-basis" :class="{ aktiv: a.filter === 'ergebnis' }" @click="umschalten('ergebnis')">
-            <span class="wert mono">{{ n('basis', 'unbedingt') }}<small v-if="rs.ergaenzt"> + {{ rs.ergaenzt }}</small></span>
+            <span class="wert mono">{{ k.basis }}<small v-if="k.ergaenzt"> + {{ k.ergaenzt }}</small></span>
             <span class="name"><span class="lang">in der Basis-Stückliste</span><span class="kurz">in Basis</span></span>
           </button>
           <button type="button" class="kennzahl k-offen" :class="{ aktiv: a.filter === 'offen' }" @click="umschalten('offen')">
-            <span class="wert mono">{{ n('manuell_prüfen', 'unterhalb_manuell') }}</span>
+            <span class="wert mono">{{ k.offen }}</span>
             <span class="name"><span class="lang">offen – manuell prüfen</span><span class="kurz">offen</span></span>
           </button>
           <button type="button" class="kennzahl k-aus" :class="{ aktiv: a.filter === 'raus' }" @click="umschalten('raus')">
-            <span class="wert mono">{{ n('ausgeschlossen', 'ausgeschlossen_vererbt', 'ignoriert') }}</span>
+            <span class="wert mono">{{ k.aus }}</span>
             <span class="name"><span class="lang">nicht in der Basis</span><span class="kurz">nicht Basis</span></span>
           </button>
           <button v-if="!a.entwurfLeer" type="button" class="kennzahl k-entwurf" :class="{ aktiv: a.filter === 'geaendert' }" @click="umschalten('geaendert')">
@@ -76,8 +76,8 @@
           <div class="fortschritt">
             <div class="fz">
               <strong>Bewertet: {{ rs.bewertet }} von {{ rs.alle }}</strong>
-              <span v-if="rs.ungespeichert" class="ungespeichert">· {{ rs.ungespeichert }} nicht gespeichert</span>
-              <span v-if="rs.ergaenzt" class="text-2">· {{ rs.ergaenzt }} ergänzt</span>
+              <span v-if="rs.ungespeichert" class="ungespeichert"> · {{ rs.ungespeichert }} nicht gespeichert</span>
+              <span v-if="rs.ergaenzt" class="text-2"> · {{ rs.ergaenzt }} ergänzt</span>
             </div>
             <v-progress-linear :model-value="rs.alle ? (100 * rs.bewertet) / rs.alle : 0" color="success" bg-color="#dfe3e7" height="5" rounded />
           </div>
@@ -135,7 +135,7 @@
               </div>
               <div class="menge mono">{{ fmtMenge(item.e.menge, item.e.meins || 'ST') }}</div>
               <div><span class="st st-ergaenzt"><span class="pkt" />{{ item.e.lokal ? 'ergänzt · ungespeichert' : 'ergänzt' }}</span></div>
-              <div class="r"><v-btn size="x-small" variant="outlined" :disabled="!a.entwurfLeer" @click="a.entferneErgaenzung(item.e)">Entfernen</v-btn></div>
+              <div class="r"><v-btn size="x-small" variant="outlined" :disabled="Boolean(a.bewertenGesperrt)" @click="a.entferneErgaenzung(item.e)">Entfernen</v-btn></div>
             </div>
           </template>
         </v-virtual-scroll>
@@ -169,7 +169,8 @@ const exportLaedt = ref(false)
 const scroller = ref<any>(null)
 const baumEl = ref<HTMLElement | null>(null)
 
-const n = (...st: string[]) => st.reduce((s, k) => s + (d.value?.zaehler?.[k] || 0), 0)
+// Kennzahlen inkl. manueller Entscheidungen – so, wie das Material exportiert wird (D26)
+const k = computed(() => a.kennzahlen)
 
 const zeilen = computed(() => {
   const z: any[] = a.sichtbar.reihenfolge.map((x) => ({ art: 'pos', ...x }))
@@ -208,18 +209,29 @@ function taste(ev: KeyboardEvent) {
     const p = a.sichtbar.reihenfolge.find((x) => x.p.id === a.auswahl)?.p
     if (!p) return
     const urteil = OFFEN_STATUS.has(p.status) ? 'gehoert_nicht_rein' : IM_ERGEBNIS.has(p.status) ? 'gehoert_nicht_rein' : 'fehlt'
-    a.setzeUrteil(a.auswahl, a.urteilVon(a.auswahl)?.urteil === urteil ? null : urteil)
+    a.setzeUrteil(a.auswahl, urteil)
   }
   else if (a.auswahl && !a.bewertenGesperrt && (ev.key === 'e' || ev.key === 'E')) {
     ev.preventDefault()
     const p = a.sichtbar.reihenfolge.find((x) => x.p.id === a.auswahl)?.p
-    if (p && OFFEN_STATUS.has(p.status)) a.setzeUrteil(a.auswahl, a.urteilVon(a.auswahl)?.urteil === 'fehlt' ? null : 'fehlt')
+    if (p && OFFEN_STATUS.has(p.status)) a.setzeUrteil(a.auswahl, 'fehlt')
   }
   else if (a.auswahl && !a.bewertenGesperrt && (ev.key === 'r' || ev.key === 'R')) {
     ev.preventDefault()
     const p = a.sichtbar.reihenfolge.find((x) => x.p.id === a.auswahl)?.p
-    if (p && OFFEN_STATUS.has(p.status)) { ui.melde('„Manuell prüfen“ lässt sich nicht als „Richtig“ markieren – „Sollte rein“ oder „Sollte raus“ wählen.'); return }
-    a.setzeUrteil(a.auswahl, a.urteilVon(a.auswahl)?.urteil === 'richtig' ? null : 'richtig')
+    if (p && OFFEN_STATUS.has(p.status)) { ui.melde('„Manuell prüfen“ lässt sich nicht als „Richtig“ markieren – „Sollte rein“ (E) oder „Sollte raus“ (F) wählen.'); return }
+    a.setzeUrteil(a.auswahl, 'richtig')  // setzt nur; Entfernen mit Entf/Rücktaste
+    const i2 = ids.indexOf(a.auswahl)
+    if (i2 >= 0 && i2 < ids.length - 1) a.auswahl = ids[i2 + 1]  // weiter zur nächsten Zeile
+  }
+  else if (a.auswahl && !a.bewertenGesperrt && (ev.key === 'Delete' || ev.key === 'Backspace')) {
+    ev.preventDefault()
+    a.setzeUrteil(a.auswahl, null)
+  }
+  else if (a.auswahl && a.bewertenGesperrt && ['r', 'R', 'f', 'F', 'e', 'E', 'Delete', 'Backspace'].includes(ev.key)) {
+    ev.preventDefault()
+    ui.melde(a.bewertenGesperrt)
+    return
   }
   else return
   nextTick(() => {
@@ -280,6 +292,7 @@ async function exportiere() {
 .werkzeuge .klapp { display: flex; }
 .segment :deep(.v-btn) { text-transform: none; letter-spacing: 0; }
 .baum-suche { max-width: 220px; min-width: 160px; }
+.hinweis-mehrzeilig { font-size: 13px; }
 .review-leiste { display: flex; align-items: center; gap: 10px 12px; margin-top: 10px; padding: 8px 10px; border-radius: 8px; background: var(--flaeche-2); border: 1px solid var(--linie); flex-wrap: wrap; }
 .fortschritt { flex: 1 1 180px; min-width: 160px; }
 .knoepfe { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -321,7 +334,6 @@ async function exportiere() {
   .fortschritt { flex: 1 1 120px; }
   .fz { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
   .knoepfe { flex-wrap: nowrap; }
-  .hinweis :deep(.v-alert__content) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .hinweis { padding-top: 4px !important; padding-bottom: 4px !important; }
+  .hinweis { padding-top: 4px !important; padding-bottom: 4px !important; font-size: 12.5px; }
 }
 </style>

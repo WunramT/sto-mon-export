@@ -259,7 +259,23 @@ export const useArbeit = defineStore('arbeit', () => {
     basisAliasse.value = a
   }
 
-  async function ladeMeta() { meta.value = await api('GET', '/meta') }
+  async function ladeMeta() { meta.value = await api('GET', '/meta'); regelnVeraltet.value = false }
+
+  // Haben Kolleg:innen inzwischen Regeln übernommen? (Abfrage alle 30 s und beim Zurückkehren ins Fenster)
+  const regelnVeraltet = ref(false)
+  async function pruefeRegelstand() {
+    if (!gestartet.value || !meta.value) return
+    try {
+      const m = await api('GET', '/meta')
+      if (m.regel_version !== meta.value.regel_version) regelnVeraltet.value = true
+    } catch { /* still: nächster Versuch */ }
+  }
+  async function aktualisiereRegeln() {
+    await Promise.all([ladeBasisRegeln(), ladeMeta(), ladeMaterialien()])
+    const n = bereinigeEntwurf()
+    entwurfGeaendert()
+    ui.melde('Regelstand aktualisiert.' + (n ? ` ${mehrzahl(n, 'Änderung Ihres Entwurfs war', 'Änderungen Ihres Entwurfs waren')} inzwischen übernommen und ${n === 1 ? 'wurde' : 'wurden'} entfernt.` : ''))
+  }
 
   async function ladeMaterialien() {
     materialienLaden.value = true
@@ -497,6 +513,31 @@ export const useArbeit = defineStore('arbeit', () => {
     speichereLokal()
   }
 
+  // Manuelle Entscheidung einer offenen Position (D25): gespeichert oder ungespeichert
+  function manuell(p: Dict): 'rein' | 'raus' | null {
+    if (!OFFEN_STATUS.has(p.status)) return null
+    const u = urteilVon(p.id)?.urteil
+    return u === 'fehlt' ? 'rein' : u === 'gehoert_nicht_rein' ? 'raus' : null
+  }
+  // „rein“ unter einer Baugruppe, die nicht in die Basis kommt (Regel oder manuell „raus“)
+  const widersprueche = computed<string[]>(() => {
+    const ps: Dict[] = daten.value?.positionen || []
+    const raus = ps.filter((p) => manuell(p) === 'raus' || (!OFFEN_STATUS.has(p.status) && !IM_ERGEBNIS.has(p.status))).map((p) => p.id)
+    return ps.filter((p) => manuell(p) === 'rein' && raus.some((r) => p.id.startsWith(r + '/'))).map((p) => p.id)
+  })
+  // Kennzahlen wie im Export (D26): Regelergebnis + manuelle Entscheidungen + Ergänzungen
+  const kennzahlen = computed(() => {
+    const ps: Dict[] = daten.value?.positionen || []
+    let basis = 0, offen = 0, aus = 0
+    for (const p of ps) {
+      const m = manuell(p)
+      if (IM_ERGEBNIS.has(p.status) || (m === 'rein' && p.matnr)) basis++
+      else if (OFFEN_STATUS.has(p.status) && !m) offen++
+      else aus++
+    }
+    return { basis, offen, aus, ergaenzt: reviewStand.value.ergaenzt }
+  })
+
   // Bestätigbar (D25): regelentschiedene Zeilen „richtig“, offene Zeilen manuell „Sollte rein/raus“
   function urteilPasst(p: Dict, u: Dict | null = urteilVon(p.id)) {
     if (!u?.urteil) return false
@@ -508,6 +549,9 @@ export const useArbeit = defineStore('arbeit', () => {
     const rs = reviewStand.value
     if (!d?.positionen || d.review?.bestaetigt) return null
     if (!entwurfLeer.value) return { text: 'Erst den Entwurf übernehmen oder verwerfen.' }
+    if (widersprueche.value.length) {
+      return { text: `${mehrzahl(widersprueche.value.length, 'Position ist', 'Positionen sind')} „Sollte rein“, ihre Baugruppe aber nicht in der Basis – bitte eines von beiden ändern.`, ziel: widersprueche.value[0] }
+    }
     const ohne = d.positionen.filter((p: Dict) => !urteilVon(p.id))
     if (ohne.length && !rs.bewertet) return null
     if (ohne.length) return { text: `Noch ${mehrzahl(ohne.length, 'Zeile', 'Zeilen')} ohne Urteil.`, ziel: ohne[0].id }
@@ -523,7 +567,7 @@ export const useArbeit = defineStore('arbeit', () => {
   const bestaetigbar = computed(() => {
     const d = daten.value
     const rs = reviewStand.value
-    if (!d?.positionen || rs.ungespeichert || !entwurfLeer.value || d.review?.veraltet) return false
+    if (!d?.positionen || rs.ungespeichert || !entwurfLeer.value || d.review?.veraltet || widersprueche.value.length) return false
     return d.positionen.every((p: Dict) => urteilPasst(p, d.review?.urteile?.[p.id]))
   })
 
@@ -536,6 +580,7 @@ export const useArbeit = defineStore('arbeit', () => {
         .map((e: Dict) => ({ parent_pfad: e.pfad.split('/+:')[0], matnr: e.matnr, menge: e.menge, meins: e.meins, kommentar: e.kommentar })),
       ...lokalErgaenzt.value,
     ]
+    const gesendet = { lokal: { ...lokal.value }, ergaenzt: [...lokalErgaenzt.value], entfernt: [...entfernt.value] }
     let r: Dict
     try {
       r = await api('POST', `/review/${d.matnr}`, { von: auth.name, urteile, ergaenzt, stand: d.review?.stand ?? null })
@@ -543,11 +588,24 @@ export const useArbeit = defineStore('arbeit', () => {
       if (e instanceof ApiFehler && e.status === 409) {
         // Stand der Kollegin laden; die eigenen ungespeicherten Urteile bleiben darüber liegen
         await ladeMaterial(d.matnr, { behalteAuswahl: true })
-        throw new ApiFehler(`${e.message}. Ihr Stand liegt jetzt über deren Bewertung – bitte kurz prüfen und erneut speichern.`, 409)
+        const abweichend = Object.entries(lokal.value).filter(([id, u]) => {
+          const ihr = daten.value?.review?.urteile?.[id]
+          return ihr && ihr.urteil !== (u as Dict)?.urteil
+        }).length
+        const wer = e.daten?.konflikte?.[0]?.von || 'Jemand'
+        throw new ApiFehler(`${wer} hat dieses Material inzwischen bewertet.` + (abweichend
+          ? ` Bei ${mehrzahl(abweichend, 'Zeile weicht', 'Zeilen weichen')} Ihr Urteil von dem der Kollegin/des Kollegen ab – Ihres gilt, wenn Sie erneut speichern.`
+          : ' Ihre Urteile liegen jetzt über deren Stand – bitte kurz prüfen und erneut speichern.'), 409)
       }
       throw e
     }
-    bewertungVerwerfen()
+    // nur das Gesendete als gespeichert abhaken – was während des Speicherns dazukam, bleibt offen
+    const rest = { ...lokal.value }
+    for (const [id, u] of Object.entries(gesendet.lokal)) if (JSON.stringify(rest[id]) === JSON.stringify(u)) delete rest[id]
+    lokal.value = rest
+    lokalErgaenzt.value = lokalErgaenzt.value.filter((e) => !gesendet.ergaenzt.includes(e))
+    entfernt.value = entfernt.value.filter((x) => !gesendet.entfernt.includes(x))
+    speichereLokal()
     const teile = []
     if (r.urteile) teile.push(`${mehrzahl(r.urteile, 'Zeile', 'Zeilen')} bewertet`)
     if (r.ergaenzt) teile.push(`${mehrzahl(r.ergaenzt, 'Material', 'Materialien')} als fehlend ergänzt`)
@@ -625,7 +683,8 @@ export const useArbeit = defineStore('arbeit', () => {
     setzeUrteil, setzeKommentar, alleSichtbarenRichtig, ergaenze, entferneErgaenzung, bewertungVerwerfen, sperrGrund,
     bestaetigbar, speichereReview, bestaetige, bestaetigungAufheben, exportiere, ladeRegelAnsicht, berechneAuswirkung,
     oeffneMerkmal, setzeMerkmalName, offeneFragen, ladeServerEntwurf, entwurfGeaendert, speichereLokal, bewertenGesperrt,
-    entwurfSofortSichern, urteilPasst,
+    entwurfSofortSichern, urteilPasst, manuell, widersprueche, kennzahlen, regelnVeraltet, pruefeRegelstand,
+    aktualisiereRegeln, startKontext,
     klappeTrefferAuf,
   }
 })

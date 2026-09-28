@@ -13,6 +13,9 @@ test.beforeEach(async ({ page }) => {
   await page.getByLabel('Team-Passwort').fill(PASSWORT)
   await page.getByRole('button', { name: 'Anmelden' }).click()
   await expect(page.locator('.zeile[data-id]').first()).toBeVisible()
+  // immer mit demselben Material beginnen (unabhängig vom Bearbeitungsstand der Daten)
+  await page.locator('.material', { hasText: '90000001' }).click()
+  await expect(page.locator('h1.mat-titel')).toContainText('90000001')
 })
 
 test('falsches Passwort wird abgewiesen', async ({ page }) => {
@@ -112,4 +115,19 @@ test('Zuklappen wirkt auch bei aktivem Filter', async ({ page }) => {
   const vorher = await zeilen.count()
   await page.getByRole('button', { name: 'Alle zuklappen' }).click()
   await expect(zeilen).not.toHaveCount(vorher)
+})
+
+test('Kürzel zuordnen und übernehmen (ohne falschen Konflikt)', async ({ page }) => {
+  await page.getByRole('tab', { name: /Regeln/ }).click()
+  const chip = page.locator('.kuerzel-chip', { hasText: 'ZZ' })
+  test.skip((await chip.count()) === 0, 'ZZ ist in diesen Daten schon zugeordnet (Test braucht frische Beispieldaten)')
+  await chip.getByRole('button', { name: 'Zuordnen' }).click()
+  await page.getByRole('dialog').getByRole('combobox').first().click()
+  await page.getByRole('option', { name: /Sitztiefe|SITZTIEFE/ }).first().click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Zuordnen' }).click()
+  await page.locator('[data-test="uebernehmen-knopf"]').click()
+  await page.getByRole('dialog').getByLabel(/Begründung/).fill('ZZ steht für die Sitztiefe (E2E)')
+  await page.locator('[data-test="uebernehmen-ok"]').click()
+  await expect(page.getByText('Übernommen – die Regeln gelten jetzt für alle.')).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Regel-Entwurf' })).toHaveCount(0)
 })

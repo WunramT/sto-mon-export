@@ -222,12 +222,12 @@ pipeline {
                             ${FRONTEND_IMAGE}:${params.IMAGE_TAG_FRONTEND}
                     """
                     waitHealthy(FRONTEND_CONTAINER, 12)
-                    // neue Version läuft gesund: spätere Fehler (Laden, Aufräumen) rollen nicht mehr zurück
-                    env.GEPARKT = 'fertig'
                     // Durchstich: Frontend-nginx → Backend
                     sshCommand remote: REMOTE, command: """
                         docker exec ${FRONTEND_CONTAINER} wget -q -O - http://127.0.0.1${viteBasePath}api/health
                     """
+                    // neue Version läuft gesund: spätere Fehler (Laden, Aufräumen) rollen nicht mehr zurück
+                    env.GEPARKT = 'fertig'
                 }
             }
         }

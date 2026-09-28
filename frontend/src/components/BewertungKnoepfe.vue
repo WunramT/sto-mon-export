@@ -5,7 +5,7 @@
         <span v-bind="props">
           <button type="button" class="bew" :class="[k.art, { an: u?.urteil === k.urteil }]" :disabled="Boolean(sperre)"
             :aria-pressed="u?.urteil === k.urteil" :aria-label="k.text" :tabindex="imBaum ? -1 : undefined" :data-test="`bew-${k.test}`" @click.stop="setze(k.urteil)">
-            <v-icon :icon="k.icon" size="15" /><span class="txt">{{ k.text }}</span>
+            <v-icon :icon="k.icon" size="15" /><span class="txt">{{ k.text }}</span><span class="txt-kurz">{{ k.kurz }}</span>
           </button>
         </span>
       </template>
@@ -16,6 +16,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useArbeit } from '@/stores/arbeit'
+import { useUi } from '@/stores/ui'
 import { IM_ERGEBNIS, OFFEN_STATUS } from '@/utils/texte'
 
 const props = defineProps<{ p: any; imBaum?: boolean }>()
@@ -23,14 +24,22 @@ const a = useArbeit()
 const u = computed(() => a.urteilVon(props.p.id))
 const sperre = computed(() => a.bewertenGesperrt)
 
-const RICHTIG = { urteil: 'richtig', text: 'Richtig', titel: 'Richtig: der Status dieser Zeile passt', icon: 'mdi-check', art: 'ok', test: 'richtig' }
-const RAUS = { urteil: 'gehoert_nicht_rein', text: 'Sollte raus', titel: 'Falsch: gehört NICHT in die Basis-Stückliste', icon: 'mdi-minus-circle-outline', art: 'nein', test: 'falsch' }
-const REIN = { urteil: 'fehlt', text: 'Sollte rein', titel: 'Falsch: gehört in die Basis-Stückliste', icon: 'mdi-plus-circle-outline', art: 'nein', test: 'falsch' }
+const RICHTIG = { urteil: 'richtig', text: 'Richtig', kurz: '', titel: 'Richtig: der Status dieser Zeile passt', icon: 'mdi-check', art: 'ok', test: 'richtig' }
+const RAUS = { urteil: 'gehoert_nicht_rein', text: 'Sollte raus', kurz: 'raus', titel: 'Falsch: gehört NICHT in die Basis-Stückliste', icon: 'mdi-minus-circle-outline', art: 'nein', test: 'falsch' }
+const REIN = { urteil: 'fehlt', text: 'Sollte rein', kurz: 'rein', titel: 'Falsch: gehört in die Basis-Stückliste', icon: 'mdi-plus-circle-outline', art: 'nein', test: 'falsch' }
 // „Manuell prüfen“ ist nie einfach richtig: hier entscheidet der Fachbereich rein oder raus
 const knoepfe = computed(() => OFFEN_STATUS.has(props.p.status)
   ? [{ ...REIN, art: 'rein', test: 'rein', titel: 'Gehört in die Basis-Stückliste' }, { ...RAUS, test: 'falsch', titel: 'Gehört nicht in die Basis-Stückliste' }]
   : [RICHTIG, IM_ERGEBNIS.has(props.p.status) ? RAUS : REIN])
-function setze(urteil: string) { a.setzeUrteil(props.p.id, u.value?.urteil === urteil ? null : urteil) }
+const ui = useUi()
+function setze(urteil: string) {
+  const aus = u.value?.urteil === urteil
+  a.setzeUrteil(props.p.id, aus ? null : urteil)
+  // Klassenposition ohne Material: „rein“ heißt, ein bestimmtes Material gehört hinein → gleich fragen, welches
+  if (!aus && urteil === 'fehlt' && !props.p.matnr && props.p.postp === 'K') {
+    ui.oeffne('ergaenzen', { parentId: props.p.parent, hinweis: `Welches Material wird für die Klassenposition ${props.p.posnr} eingesetzt?` })
+  }
+}
 </script>
 
 <style scoped>
@@ -41,5 +50,6 @@ function setze(urteil: string) { a.setzeUrteil(props.p.id, u.value?.urteil === u
 .bew.ok.an { background: var(--s-basis); border-color: var(--s-basis); color: #fff; }
 .bew.rein.an { background: #2f6db3; border-color: #2f6db3; color: #fff; }
 .bew.nein.an { background: #b3261e; border-color: #b3261e; color: #fff; }
-@media (max-width: 1440px) { .bew { width: 34px; padding: 3px 0; } .bew .txt { display: none; } }
+.txt-kurz { display: none; }
+@media (max-width: 1440px) { .bew { width: 52px; padding: 3px 0; } .bew .txt { display: none; } .bew .txt-kurz { display: inline; } .bew.ok { width: 34px; } }
 </style>

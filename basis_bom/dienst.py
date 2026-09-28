@@ -685,9 +685,11 @@ class Dienst:
                                   "beim_oeffnen": soll})  # fmt: skip
         for a in entwurf.aliasse:
             akt = rs.aliasse.get(a["alias"])
-            ist = {"merkmal": akt.merkmal if akt else None, "status": akt.status if akt else None}
-            soll = a.get("vorher") or {"merkmal": None, "status": None}
-            if (ist["merkmal"], ist["status"]) != (soll.get("merkmal"), soll.get("status")):
+            # fehlendes Kürzel = ohne Merkmal und OFFEN (so liefert es auch regeln() an die Oberfläche)
+            ist = {"merkmal": akt.merkmal if akt else None, "status": akt.status if akt else rules.OFFEN}
+            soll = a.get("vorher") or {"merkmal": None, "status": rules.OFFEN}
+            if (ist["merkmal"] or None, ist["status"] or rules.OFFEN) != (soll.get("merkmal") or None,
+                                                                          soll.get("status") or rules.OFFEN):
                 konflikte.append({"art": "kuerzel", "alias": a["alias"], "jetzt": ist, "beim_oeffnen": soll})
         if konflikte:
             raise Konflikt(konflikte)
@@ -702,7 +704,10 @@ class Dienst:
                 raise Eingabefehler(f"{a.merkmal}={a.wert}: Basis braucht einen Rang")
         fehler = rules.pruefe_raenge(self.eng, aenderungen)
         if fehler:
-            raise Eingabefehler("; ".join(fehler))
+            # doppelter Rang: jemand hat inzwischen einen anderen Wert auf denselben Rang gesetzt → Konflikt,
+            # die Oberfläche lädt den Stand und nummeriert neu
+            raise Konflikt([{"art": "rang", "merkmal": f.split(":", 1)[0], "text": f} for f in fehler],
+                           "Die Rangfolge wurde inzwischen geändert")
         aliasse = [
             rules.AliasAenderung(a["alias"], a.get("merkmal") or None, a["status"]) for a in entwurf.aliasse
         ]
@@ -840,17 +845,27 @@ class Dienst:
         falsch = [p for p, r in urteile.items() if p in aktuell and (
             r["urteil"] not in ("fehlt", "gehoert_nicht_rein") if self._offen(aktuell[p]) else r["urteil"] != "richtig")]
         veraltet = [p for p, r in urteile.items() if aktuell.get(p) != r["status"]]
-        if fehlend or falsch or veraltet:
-            raise Eingabefehler(
-                f"Bestätigen nicht möglich: {len(fehlend)} ohne Urteil, {len(falsch)} als falsch markiert, "
-                f"{len(veraltet)} mit geändertem Status seit dem Review"
-            )
+        widerspruch = self._widersprueche(aktuell, {p: r["urteil"] for p, r in urteile.items()})
+        if fehlend or falsch or veraltet or widerspruch:
+            teile = [f"{len(fehlend)} ohne Urteil", f"{len(falsch)} als falsch markiert",
+                     f"{len(veraltet)} mit geändertem Status seit dem Review"]  # fmt: skip
+            if widerspruch:
+                teile.append(f"{len(widerspruch)} „Sollte rein“ unter einer ausgeschlossenen Baugruppe")
+            raise Eingabefehler("Bestätigen nicht möglich: " + ", ".join(teile))
         with self.eng.begin() as con:
             con.execute(sa.text(
                 "INSERT INTO basis_bom.bestaetigt (root_matnr, bestaetigt_von) VALUES (:r, :v) "
                 "ON CONFLICT (root_matnr) DO UPDATE SET bestaetigt_von = :v, datum = current_date"),
                 {"r": matnr, "v": von.strip()})  # fmt: skip
         return {"bestaetigt": matnr}
+
+    def _widersprueche(self, aktuell: dict[str, str], urteile: dict[str, str]) -> list[str]:
+        """Positionen, die hineinsollen, deren Baugruppe darüber aber nicht in der Basis ist (Regel oder manuell)."""
+        raus = {p for p, st in aktuell.items()
+                if (self._offen(st) and urteile.get(p) == "gehoert_nicht_rein")
+                or (not self._offen(st) and st not in EXPORT_STATUS)}  # fmt: skip
+        rein = [p for p, st in aktuell.items() if self._offen(st) and urteile.get(p) == "fehlt"]
+        return [p for p in rein if any(p.startswith(r + "/") for r in raus)]
 
     def export_zeilen(self, matnr: str):
         """Auflösung für den SAP-Format-Download: Regelergebnis plus die gespeicherten manuellen Entscheidungen
@@ -868,6 +883,10 @@ class Dienst:
             offen = df["status"].isin([MANUELL_PRUEFEN, UNTERHALB_MANUELL])
             rein = offen & df["pfad"].map(lambda p: manuell.get(p) == "fehlt") & (df["matnr"] != "")
             df.loc[rein, "status"] = BASIS
+            # unter einer nicht übernommenen Baugruppe kommt nichts in den Export
+            draussen = [p for p, st in zip(df["pfad"], df["status"], strict=True) if st not in EXPORT_STATUS]
+            unter = df["pfad"].map(lambda p: any(p.startswith(d + "/") for d in draussen))
+            df.loc[unter & df["status"].isin(EXPORT_STATUS), "status"] = AUSGESCHLOSSEN_VERERBT
         neu = []
         for r in rows:
             if r["status"] is None and r["matnr"]:

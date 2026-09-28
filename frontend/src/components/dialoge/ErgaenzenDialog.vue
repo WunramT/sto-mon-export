@@ -2,12 +2,13 @@
   <v-card>
     <v-card-title class="pt-5 px-6">Fehlendes Material ergänzen</v-card-title>
     <v-card-text class="px-6">
+      <v-alert v-if="daten.hinweis" type="info" variant="tonal" density="compact" class="mb-3">{{ daten.hinweis }}</v-alert>
       <p class="text-body-2 text-2 mb-4">Für Materialien, die in die Basis-Stückliste gehören, aber im Baum ganz fehlen.</p>
       <v-select v-model="unter" :items="baugruppen" item-title="text" item-value="id" label="Unter Baugruppe" class="mb-4" />
       <v-text-field v-model="nr" label="Materialnummer" placeholder="z. B. 10000999" inputmode="numeric" autofocus class="mb-1"
         :messages="info.text" :color="info.farbe" :error-messages="nrFehler" @update:model-value="pruefe" />
       <div class="reihe mt-3">
-        <v-text-field v-model.number="menge" label="Menge" type="number" min="0" step="any" :error-messages="mengeFehler" />
+        <v-text-field v-model.number="menge" label="Menge je Baugruppe" type="number" min="0" step="any" :error-messages="mengeFehler" @update:model-value="mengeFehler = ''" />
         <v-select v-model="einheit" :items="['ST', 'M', 'M2', 'KG', 'L', 'PAA']" label="Einheit" />
         <v-text-field v-model="kommentar" label="Kommentar (optional)" />
       </div>
@@ -26,7 +27,7 @@ import { api } from '@/api/client'
 import { useArbeit } from '@/stores/arbeit'
 import { useUi } from '@/stores/ui'
 
-const props = defineProps<{ daten: { parentId: string } }>()
+const props = defineProps<{ daten: { parentId: string; hinweis?: string } }>()
 const emit = defineEmits<{ schliessen: [] }>()
 const a = useArbeit()
 const ui = useUi()
@@ -75,5 +76,5 @@ function ok() {
 </script>
 
 <style scoped>
-.reihe { display: grid; grid-template-columns: 110px 100px 1fr; gap: 10px; }
+.reihe { display: grid; grid-template-columns: 150px 100px 1fr; gap: 10px; }
 </style>

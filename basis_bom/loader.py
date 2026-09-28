@@ -598,6 +598,10 @@ def schreibe(eng: Engine, erg: Ladeergebnis, quelle_roots: str) -> None:
                     "h": p.hinweise,
                 },  # fmt: skip
             )
+        if quelle_roots != "fixtures":  # echte Exporte: Test-Roots und Test-Ausschlüsse nicht mitschleppen
+            con.execute(sa.text("UPDATE basis_bom.root_material SET gueltig_bis = now() "
+                                "WHERE quelle = 'fixtures' AND gueltig_bis IS NULL"))  # fmt: skip
+            con.execute(sa.text("DELETE FROM basis_bom.root_ausschluss WHERE geaendert_von = 'fixture'"))
         if erg.roots is not None:
             schreibe_roots(con, erg.roots["matnr"].tolist(), quelle_roots)
         if erg.root_ausschluss is not None:

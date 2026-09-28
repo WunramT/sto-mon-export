@@ -30,6 +30,9 @@ def db_init(
         "--alle-stuecklisten",
         help="S nicht auf die von den Roots erreichbaren Stücklisten beschränken",
     ),
+    nur_wenn_leer: bool = typer.Option(
+        False, "--nur-wenn-leer", help="mit --fixtures: nur laden, wenn sap_raw noch leer ist (Container-Neuaufbau)"
+    ),
 ) -> None:
     """Schemas anlegen (idempotent) und optional SAP-Daten nach `sap_raw` laden."""
     from . import loader, pruefpunkte
@@ -38,6 +41,9 @@ def db_init(
     db.init_schema(eng)
     if fixtures and from_dir:
         raise typer.BadParameter("--fixtures und --from-dir schließen sich aus")
+    if fixtures and nur_wenn_leer and db.table_exists(eng, "sap_raw", "mast"):
+        typer.echo("sap_raw enthält schon Daten – Fixtures nicht geladen (--nur-wenn-leer)")
+        fixtures = False
     if fixtures:
         erg = loader.lade_fixtures()
         loader.schreibe(eng, erg, quelle_roots="fixtures")

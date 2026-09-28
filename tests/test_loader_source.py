@@ -289,3 +289,26 @@ def test_stpo_nur_materialstuecklisten(tmp_path):
     erg = loader.lade_quellen(quellen)
     assert "99999998" not in set(erg.tabellen["STPO"]["IDNRK"])  # gleiche STLNR, anderer Stücklistentyp
     assert set(erg.tabellen["STPO"]["STLTY"]) == {"M"}
+
+
+def test_echte_roots_ersetzen_test_roots(pg_engine, fixture_db):
+    import sqlalchemy as sa
+
+    def aktiv():
+        with pg_engine.connect() as con:
+            roots = set(con.execute(sa.text(
+                "SELECT matnr FROM basis_bom.root_material WHERE gueltig_bis IS NULL")).scalars())  # fmt: skip
+            aus = set(con.execute(sa.text("SELECT matnr FROM basis_bom.root_ausschluss")).scalars())
+        return roots, aus
+
+    erg = loader.lade_fixtures()
+    erg.roots, erg.root_ausschluss = pd.DataFrame({"matnr": ["90000001", "11071032"]}), None
+    try:
+        loader.schreibe(pg_engine, erg, quelle_roots="planzeiten_test")
+        roots, aus = aktiv()
+        assert roots == {"90000001", "11071032"} and not aus  # Test-Roots/-Ausschlüsse weg, echte bleiben
+    finally:
+        with pg_engine.begin() as con:
+            loader.schreibe_roots(con, [], "planzeiten_test")
+        loader.schreibe(pg_engine, loader.lade_fixtures(), quelle_roots="fixtures")
+    assert "90000004" in aktiv()[1]

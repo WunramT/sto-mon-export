@@ -42,7 +42,7 @@ const a = useArbeit()
 const filterListe = computed(() => {
   const z: Record<string, number> = { alle: a.materialien.length }
   for (const m of a.materialien) z[m.zustand] = (z[m.zustand] || 0) + 1
-  return ['alle', 'offen', 'in_arbeit', 'bestaetigt', 'nicht_aufloesbar']
+  return ['alle', 'offen', 'in_arbeit', 'bestaetigt', 'bestaetigt_veraltet', 'nicht_aufloesbar']
     .filter((w) => w === 'alle' || z[w] || a.zustandFilter === w)
     .map((w) => ({ wert: w, text: w === 'alle' ? 'Alle' : ZUSTAND[w].text, anzahl: z[w] || 0 }))
 })
@@ -73,6 +73,7 @@ const liste = computed(() => {
 .z-offen { color: var(--s-unbedingt); background: var(--s-unbedingt-bg); }
 .z-in_arbeit { color: var(--s-manuell); background: var(--s-manuell-bg); }
 .z-bestaetigt { color: var(--s-basis); background: var(--s-basis-bg); }
+.z-bestaetigt_veraltet { color: #8a4b00; background: #fde9c8; }
 .z-nicht_aufloesbar { color: var(--s-aus); background: var(--s-aus-bg); }
 .fuss { flex: none; font-size: 11.5px; padding: 6px 14px; border-top: 1px solid var(--linie); }
 </style>

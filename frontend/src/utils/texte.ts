@@ -22,6 +22,7 @@ export const ZUSTAND: Record<string, { text: string; farbe: string; icon: string
   offen: { text: 'Zu prüfen', farbe: 'info', icon: 'mdi-circle-outline' },
   in_arbeit: { text: 'In Arbeit', farbe: 'warning', icon: 'mdi-progress-clock' },
   bestaetigt: { text: 'Bestätigt', farbe: 'success', icon: 'mdi-check-circle' },
+  bestaetigt_veraltet: { text: 'Bestätigt – veraltet', farbe: 'warning', icon: 'mdi-alert-decagram-outline' },
   nicht_aufloesbar: { text: 'Nicht auflösbar', farbe: 'grey', icon: 'mdi-alert-circle-outline' },
 }
 export const URTEIL: Record<string, string> = { richtig: 'Richtig', gehoert_nicht_rein: 'Sollte raus', fehlt: 'Sollte rein' }

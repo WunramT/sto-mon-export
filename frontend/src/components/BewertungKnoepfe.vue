@@ -37,7 +37,7 @@ function setze(urteil: string) {
   a.setzeUrteil(props.p.id, aus ? null : urteil)
   // Klassenposition ohne Material: „rein“ heißt, ein bestimmtes Material gehört hinein → gleich fragen, welches
   if (!aus && urteil === 'fehlt' && !props.p.matnr && props.p.postp === 'K') {
-    ui.oeffne('ergaenzen', { parentId: props.p.parent, hinweis: `Welches Material wird für die Klassenposition ${props.p.posnr} eingesetzt?` })
+    ui.oeffne('ergaenzen', { parentId: props.p.parent, klasseId: props.p.id, hinweis: `Welches Material wird für die Klassenposition ${props.p.posnr} eingesetzt?` })
   }
 }
 </script>

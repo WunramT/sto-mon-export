@@ -14,7 +14,10 @@
       <div class="kopf">
         <div>
           <h2 class="titel">{{ w.betroffen ? `Ihr Entwurf ändert ${mehrzahl(w.betroffen, 'Material', 'Materialien')}` : 'Ihr Entwurf ändert keine Stückliste' }}</h2>
-          <p class="text-2 klein mb-0">{{ mehrzahl(w.geprueft, 'Material enthält', 'Materialien enthalten') }} die geänderten Merkmale und {{ w.geprueft === 1 ? 'wurde' : 'wurden' }} neu gerechnet.</p>
+          <p class="text-2 klein mb-0">{{ mehrzahl(w.geprueft, 'Material enthält', 'Materialien enthalten') }} die geänderten Merkmale und {{ w.geprueft === 1 ? 'wurde' : 'wurden' }} neu gerechnet (nach Regeln, ohne manuelle Entscheidungen).</p>
+          <v-alert v-if="w.bestaetigt" type="warning" variant="tonal" density="compact" class="mt-2">
+            {{ mehrzahl(w.bestaetigt, 'bestätigtes Material ändert', 'bestätigte Materialien ändern') }} sich – nach dem Übernehmen {{ w.bestaetigt === 1 ? 'ist seine' : 'sind ihre' }} Bestätigung veraltet und muss neu bewertet werden.
+          </v-alert>
         </div>
         <v-btn size="small" variant="outlined" prepend-icon="mdi-refresh" :loading="a.auswirkungLaedt" @click="a.berechneAuswirkung()">Neu berechnen</v-btn>
       </div>
@@ -25,11 +28,13 @@
       </div>
       <v-table v-else density="comfortable" class="tabelle" fixed-header height="100%">
         <thead>
-          <tr><th>Material</th><th>Geänderte Positionen</th><th>In der Basis-Stückliste</th><th>Beispiele</th></tr>
+          <tr><th>Material</th><th>Geänderte Positionen</th><th>In der Basis (nach Regeln)</th><th>Beispiele</th></tr>
         </thead>
         <tbody>
           <tr v-for="m in w.materialien" :key="m.matnr" class="klickbar" title="Material mit Entwurf öffnen" @click="a.oeffneMaterial(m.matnr)">
-            <td><strong class="mono">{{ m.matnr }}</strong><div class="text-2 klein">{{ m.kurztext }}</div></td>
+            <td><strong class="mono">{{ m.matnr }}</strong>
+              <v-chip v-if="m.bestaetigt" size="x-small" color="warning" variant="flat" class="ml-2" prepend-icon="mdi-check-decagram">bestätigt</v-chip>
+              <div class="text-2 klein">{{ m.kurztext }}</div></td>
             <td>
               <div v-for="(x, i) in m.wechsel" :key="i" class="wechsel">
                 <span class="mono">{{ x.anzahl }}×</span>

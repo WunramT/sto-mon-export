@@ -4,7 +4,8 @@
     <v-card-text class="px-6">
       <v-alert v-if="daten.hinweis" type="info" variant="tonal" density="compact" class="mb-3">{{ daten.hinweis }}</v-alert>
       <p class="text-body-2 text-2 mb-4">Für Materialien, die in die Basis-Stückliste gehören, aber im Baum ganz fehlen.</p>
-      <v-select v-model="unter" :items="baugruppen" item-title="text" item-value="id" label="Unter Baugruppe" class="mb-4" />
+      <v-select v-model="unter" :items="baugruppen" item-title="text" item-value="id" label="Unter Baugruppe" class="mb-4"
+        :messages="a.unterRaus(unter, true) ? 'Diese Baugruppe kommt nicht in die Basis – ein Material darunter käme nicht in den Export.' : ''" :color="a.unterRaus(unter, true) ? 'warning' : undefined" />
       <v-text-field v-model="nr" label="Materialnummer" placeholder="z. B. 10000999" inputmode="numeric" autofocus class="mb-1"
         :messages="info.text" :color="info.farbe" :error-messages="nrFehler" @update:model-value="pruefe" />
       <div class="reihe mt-3">
@@ -15,7 +16,7 @@
     </v-card-text>
     <v-card-actions class="px-6 pb-5">
       <v-spacer />
-      <v-btn variant="text" @click="$emit('schliessen')">Abbrechen</v-btn>
+      <v-btn variant="text" @click="abbrechen">Abbrechen</v-btn>
       <v-btn color="primary" @click="ok">Ergänzen</v-btn>
     </v-card-actions>
   </v-card>
@@ -27,14 +28,15 @@ import { api } from '@/api/client'
 import { useArbeit } from '@/stores/arbeit'
 import { useUi } from '@/stores/ui'
 
-const props = defineProps<{ daten: { parentId: string; hinweis?: string } }>()
+const props = defineProps<{ daten: { parentId: string; hinweis?: string; klasseId?: string } }>()
 const emit = defineEmits<{ schliessen: [] }>()
 const a = useArbeit()
 const ui = useUi()
 const d = a.daten as any
 const baugruppen = computed(() => [
   { id: d.matnr, text: `${d.matnr} ${d.kurztext} (oberste Ebene)` },
-  ...d.positionen.filter((p: any) => p.hat_kinder).map((p: any) => ({ id: p.id, text: `${'· '.repeat(p.ebene)}${p.matnr} ${p.kurztext}` })),
+  ...d.positionen.filter((p: any) => p.hat_kinder).map((p: any) => ({ id: p.id,
+    text: `${'· '.repeat(p.ebene)}${p.matnr} ${p.kurztext}${a.unterRaus(p.id, true) ? ' – nicht in der Basis' : ''}` })),
 ])
 const unter = ref(props.daten.parentId)
 const nr = ref('')
@@ -61,6 +63,12 @@ function pruefe() {
         : { text: 'Im SAP-Export unbekannt – bitte prüfen (ergänzen ist trotzdem möglich).', farbe: 'warning' }
     } catch { info.value = { text: '' } }
   }, 250)
+}
+
+// Klassenposition „rein“ ohne Material ergibt keinen Sinn → beim Abbrechen das „rein“ wieder zurücknehmen
+function abbrechen() {
+  if (props.daten.klasseId) { a.setzeUrteil(props.daten.klasseId, null); ui.melde('„Sollte rein“ zurückgenommen – ohne Material bleibt die Klassenposition offen.') }
+  emit('schliessen')
 }
 
 function ok() {

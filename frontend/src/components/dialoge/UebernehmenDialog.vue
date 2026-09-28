@@ -6,6 +6,10 @@
       <ul class="liste mb-4">
         <li v-for="e in a.entwurfListe" :key="e.alias || `${e.merkmal}|${e.wert}`">{{ a.entwurfEintragText(e) }}</li>
       </ul>
+      <v-alert v-if="a.auswirkungLaedt && !a.auswirkung" type="info" variant="tonal" density="compact" class="mb-3">Auswirkung wird berechnet …</v-alert>
+      <v-alert v-else-if="a.auswirkung && !a.auswirkung.fehler" :type="a.auswirkung.bestaetigt ? 'warning' : 'info'" variant="tonal" density="compact" class="mb-3">
+        {{ a.auswirkung.betroffen ? `Ändert ${mehrzahl(a.auswirkung.betroffen, 'Basis-Stückliste', 'Basis-Stücklisten')}` : 'Ändert keine Basis-Stückliste' }}<template v-if="a.auswirkung.bestaetigt">, davon {{ mehrzahl(a.auswirkung.bestaetigt, 'bestätigtes Material', 'bestätigte Materialien') }} – deren Bestätigung wird veraltet</template>.
+      </v-alert>
       <v-textarea v-model="begruendung" label="Begründung (Pflicht, für die Historie)" rows="3" autofocus
         placeholder="z. B. „Laut Produktmanagement ist FK die Standardausführung“"
         :messages="begruendung.trim().length < 5 ? 'Mindestens 5 Zeichen – andere sollen die Entscheidung nachvollziehen können.' : ''" />
@@ -44,7 +48,8 @@ import { ApiFehler } from '@/api/client'
 import { useArbeit } from '@/stores/arbeit'
 import { useAuth } from '@/stores/auth'
 import { useUi } from '@/stores/ui'
-import { REGEL_STATUS } from '@/utils/texte'
+import { REGEL_STATUS, mehrzahl } from '@/utils/texte'
+import { onMounted } from 'vue'
 
 const emit = defineEmits<{ schliessen: [] }>()
 const a = useArbeit()
@@ -53,6 +58,7 @@ const ui = useUi()
 const begruendung = ref('')
 const laedt = ref(false)
 const konflikte = ref<any[] | null>(null)
+onMounted(() => { if (!a.auswirkung && !a.auswirkungLaedt) a.berechneAuswirkung() })
 
 async function ok() {
   laedt.value = true

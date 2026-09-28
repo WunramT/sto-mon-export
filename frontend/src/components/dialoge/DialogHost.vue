@@ -1,5 +1,5 @@
 <template>
-  <v-dialog :model-value="Boolean(ui.dialog)" :max-width="breite" scrollable @update:model-value="(v) => !v && ui.schliesse()">
+  <v-dialog :model-value="Boolean(ui.dialog)" :max-width="breite" scrollable :persistent="ui.dialog?.art === 'ergaenzen' && Boolean(ui.dialog?.daten?.klasseId)" @update:model-value="(v) => !v && ui.schliesse()">
     <component :is="komponente" v-if="ui.dialog && komponente" :daten="ui.dialog.daten" @schliessen="ui.schliesse()" />
   </v-dialog>
 </template>

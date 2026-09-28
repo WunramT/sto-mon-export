@@ -237,6 +237,42 @@ def test_widerspruch_und_export_unter_ausgeschlossener_baugruppe(client, regeln_
     assert ";10000201;" not in csv and ";10000202;" not in csv and ";10000102;" in csv
 
 
+def test_bestaetigt_veraltet_und_auswirkung(client, regeln_sichern):
+    d = client.post("/api/material/90000005", json={"entwurf": None}).json()
+    urteile = {p["id"]: {"urteil": "fehlt" if p["status"] == "manuell_prüfen" else "richtig"} for p in d["positionen"]}
+    assert client.post("/api/review/90000005", json={"von": "E", "urteile": urteile}).status_code == 200
+    assert client.post("/api/bestaetigen/90000005", json={"von": "E"}).status_code == 200
+    zustand = {m["matnr"]: m["zustand"] for m in client.get("/api/materialien").json()}
+    assert zustand["90000005"] == "bestaetigt"
+    a = client.post("/api/auswirkung", json={"entwurf": FK_BASIS}).json()
+    assert a["bestaetigt"] >= 1 and a["materialien"][0]["bestaetigt"] is True
+    r = client.post("/api/uebernehmen", json={"entwurf": FK_BASIS, "von": "T", "begruendung": "FK wird Basis"})
+    assert r.status_code == 200
+    zustand = {m["matnr"]: m["zustand"] for m in client.get("/api/materialien").json()}
+    assert zustand["90000005"] == "bestaetigt_veraltet"
+
+
+def test_ergaenzt_unter_ausgeschlossener_baugruppe_und_klassenposition(client, regeln_sichern):
+    d = client.post("/api/material/90000001", json={"entwurf": None}).json()
+    pos = {p["matnr"] or f"K{p['posnr']}": p for p in d["positionen"]}
+    raus = pos["10000003"]  # nicht in der Basis
+    urteile = {p["id"]: {"urteil": "fehlt" if p["status"] in ("manuell_prüfen", "unterhalb_manuell") else "richtig"}
+               for p in d["positionen"]}  # fmt: skip
+    r = client.post("/api/review/90000001", json={"von": "E", "urteile": urteile, "ergaenzt": [
+        {"parent_pfad": raus["id"], "matnr": "10000013", "menge": 1}]})  # fmt: skip
+    assert r.status_code == 200
+    b = client.post("/api/bestaetigen/90000001", json={"von": "E"}).json()["fehler"]
+    import re
+
+    assert "ausgeschlossenen Baugruppe" in b and re.search(r"[1-9]\d* als falsch markiert", b)  # Klassenpos. ohne Material
+    assert ";10000013;" not in client.get("/api/export/90000001").text
+
+
+def test_kein_root_material(client):
+    r = client.post("/api/material/10000001", json={"entwurf": None})
+    assert r.status_code == 400 and "kein Root-Material" in r.json()["fehler"]
+
+
 def test_uebernehmen_braucht_begruendung(client):
     r = client.post("/api/uebernehmen", json={"entwurf": FK_BASIS, "von": "Test", "begruendung": " kurz"})
     assert r.status_code == 400 and "begründen" in r.json()["fehler"]

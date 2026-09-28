@@ -412,7 +412,7 @@ class Dienst:
                 continue
             grund = "Vom Fachbereich ausgeschlossen" if m in aus else _grund_text(a.root_pruefung(m))
             if m in best:
-                zustand = "bestaetigt"
+                zustand = "bestaetigt_veraltet" if not grund and self._veraltet(a, m) else "bestaetigt"
             elif grund:
                 zustand = "nicht_aufloesbar"
             elif m in in_arbeit:
@@ -423,6 +423,15 @@ class Dienst:
                         "bestaetigt": best.get(m)})  # fmt: skip
         return out
 
+    def _veraltet(self, a: Aufloeser, matnr: str) -> int:
+        """Anzahl Positionen, deren Status sich seit dem letzten Review geändert hat (0 = Bestätigung aktuell)."""
+        rows = self._letzter_review(matnr)
+        if not rows:
+            return 0
+        erg = a.loese_alle([matnr])
+        aktuell = {z["pfad"]: z["status"] for z in erg.zeilen}
+        return sum(1 for r in rows if r["status"] is not None and aktuell.get(r["pfad"]) != r["status"])
+
     # ---------------------------------------------------------------------------------------------------------
     def _loese(self, a: Aufloeser, matnr: str) -> tuple[list[dict], list[str]]:
         erg = a.loese_alle([matnr])
@@ -432,6 +441,10 @@ class Dienst:
 
     def material(self, matnr: str, entwurf: Entwurf | None = None) -> dict:
         matnr = matnr.strip().lstrip("0")
+        roots, _aus = self._roots()
+        if matnr not in set(roots):
+            raise Eingabefehler(f"{matnr} ist kein Root-Material dieses Bereichs (Liste links). "
+                                "Baugruppen öffnen Sie über das Material, in dem sie verbaut sind.")  # fmt: skip
         entwurf = entwurf or Entwurf()
         a = self.aufloeser(entwurf)
         zeilen, warnungen = self._loese(a, matnr)
@@ -665,8 +678,13 @@ class Dienst:
                     "vorher_im_ergebnis": sum(z["status"] in EXPORT_STATUS for z in vor.values()),
                     "nachher_im_ergebnis": sum(z["status"] in EXPORT_STATUS for z in nach.values()),
                 })  # fmt: skip
-        ergebnis.sort(key=lambda e: -e["geaendert"])
-        return {"materialien": ergebnis, "betroffen": len(ergebnis), "geprueft": len(kandidaten)}
+        with self.eng.connect() as con:
+            best = set(con.execute(sa.text("SELECT root_matnr FROM basis_bom.bestaetigt")).scalars())
+        for e in ergebnis:
+            e["bestaetigt"] = e["matnr"] in best
+        ergebnis.sort(key=lambda e: (not e["bestaetigt"], -e["geaendert"]))
+        return {"materialien": ergebnis, "betroffen": len(ergebnis), "geprueft": len(kandidaten),
+                "bestaetigt": sum(e["bestaetigt"] for e in ergebnis)}  # fmt: skip
 
     # ---------------------------------------------------------------------------------------------------------
     def uebernehmen(self, entwurf: Entwurf, von: str, begruendung: str | None) -> dict:
@@ -845,7 +863,12 @@ class Dienst:
         falsch = [p for p, r in urteile.items() if p in aktuell and (
             r["urteil"] not in ("fehlt", "gehoert_nicht_rein") if self._offen(aktuell[p]) else r["urteil"] != "richtig")]
         veraltet = [p for p, r in urteile.items() if aktuell.get(p) != r["status"]]
-        widerspruch = self._widersprueche(aktuell, {p: r["urteil"] for p, r in urteile.items()})
+        ergaenzt = [r["pfad"].split("/+:")[0] for r in rows if r["status"] is None]
+        widerspruch = self._widersprueche(aktuell, {p: r["urteil"] for p, r in urteile.items()}, ergaenzt)
+        # Klassenposition „rein“ braucht das eingesetzte Material (ergänzt unter derselben Baugruppe)
+        klassen = [z["pfad"] for z in erg.zeilen if not z["matnr"] and z["postp"] == "K"
+                   and urteile.get(z["pfad"], {}).get("urteil") == "fehlt"]  # fmt: skip
+        falsch += [p for p in klassen if p.rsplit("/", 1)[0] not in set(ergaenzt)]
         if fehlend or falsch or veraltet or widerspruch:
             teile = [f"{len(fehlend)} ohne Urteil", f"{len(falsch)} als falsch markiert",
                      f"{len(veraltet)} mit geändertem Status seit dem Review"]  # fmt: skip
@@ -859,13 +882,14 @@ class Dienst:
                 {"r": matnr, "v": von.strip()})  # fmt: skip
         return {"bestaetigt": matnr}
 
-    def _widersprueche(self, aktuell: dict[str, str], urteile: dict[str, str]) -> list[str]:
-        """Positionen, die hineinsollen, deren Baugruppe darüber aber nicht in der Basis ist (Regel oder manuell)."""
+    def _widersprueche(self, aktuell: dict[str, str], urteile: dict[str, str], ergaenzt_unter: list[str] = ()) -> list[str]:
+        """Positionen/Ergänzungen, die hineinsollen, deren Baugruppe aber nicht in der Basis ist (Regel oder manuell)."""
         raus = {p for p, st in aktuell.items()
                 if (self._offen(st) and urteile.get(p) == "gehoert_nicht_rein")
                 or (not self._offen(st) and st not in EXPORT_STATUS)}  # fmt: skip
         rein = [p for p, st in aktuell.items() if self._offen(st) and urteile.get(p) == "fehlt"]
-        return [p for p in rein if any(p.startswith(r + "/") for r in raus)]
+        unter = lambda p: any(p == r or p.startswith(r + "/") for r in raus)  # noqa: E731
+        return [p for p in rein if any(p.startswith(r + "/") for r in raus)] + [e for e in ergaenzt_unter if unter(e)]
 
     def export_zeilen(self, matnr: str):
         """Auflösung für den SAP-Format-Download: Regelergebnis plus die gespeicherten manuellen Entscheidungen
@@ -887,10 +911,13 @@ class Dienst:
             draussen = [p for p, st in zip(df["pfad"], df["status"], strict=True) if st not in EXPORT_STATUS]
             unter = df["pfad"].map(lambda p: any(p.startswith(d + "/") for d in draussen))
             df.loc[unter & df["status"].isin(EXPORT_STATUS), "status"] = AUSGESCHLOSSEN_VERERBT
+        drin = set(df.loc[df["status"].isin(EXPORT_STATUS), "pfad"]) | {matnr}
         neu = []
         for r in rows:
             if r["status"] is None and r["matnr"]:
                 eltern = r["pfad"].split("/+:")[0]
+                if eltern not in drin:
+                    continue  # Baugruppe nicht in der Basis → Ergänzung darunter auch nicht (D26)
                 ebene = eltern.count("/") + 1
                 neu.append({"root_matnr": matnr, "lfd": 10**6 + len(neu), "ebene": ebene, "stlnr": "", "posnr": "",
                             "parent_matnr": r["parent_matnr"], "matnr": r["matnr"], "menge": r["menge"],

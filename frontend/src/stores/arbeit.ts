@@ -229,7 +229,7 @@ export const useArbeit = defineStore('arbeit', () => {
       if (k.art === 'regel') delete entwurf.value.regeln[`${k.merkmal}|${k.wert}`]
       else delete entwurf.value.aliasse[k.alias]
     }
-    await ladeBasisRegeln()
+    await Promise.all([ladeBasisRegeln(), ladeMeta()])
     for (const e of Object.values(entwurf.value.regeln)) e.vorher = basisRegeln.value[`${e.merkmal}|${e.wert}`] || { status: 'OFFEN', rang: null }
     for (const e of Object.values(entwurf.value.aliasse)) e.vorher = basisAliasse.value[e.alias] || { merkmal: null, status: 'OFFEN' }
     // Ränge je betroffenem Merkmal neu durchnummerieren (übernommener Stand + verbliebener Entwurf)
@@ -520,27 +520,39 @@ export const useArbeit = defineStore('arbeit', () => {
     return u === 'fehlt' ? 'rein' : u === 'gehoert_nicht_rein' ? 'raus' : null
   }
   // „rein“ unter einer Baugruppe, die nicht in die Basis kommt (Regel oder manuell „raus“)
+  const rausPfade = computed<string[]>(() => (daten.value?.positionen || [])
+    .filter((p: Dict) => manuell(p) === 'raus' || (!OFFEN_STATUS.has(p.status) && !IM_ERGEBNIS.has(p.status))).map((p: Dict) => p.id))
+  const unterRaus = (pfad: string, auchSelbst = false) => rausPfade.value.some((r) => pfad.startsWith(r + '/') || (auchSelbst && pfad === r))
   const widersprueche = computed<string[]>(() => {
     const ps: Dict[] = daten.value?.positionen || []
-    const raus = ps.filter((p) => manuell(p) === 'raus' || (!OFFEN_STATUS.has(p.status) && !IM_ERGEBNIS.has(p.status))).map((p) => p.id)
-    return ps.filter((p) => manuell(p) === 'rein' && raus.some((r) => p.id.startsWith(r + '/'))).map((p) => p.id)
+    const pos = ps.filter((p) => manuell(p) === 'rein' && unterRaus(p.id)).map((p) => p.id)
+    // ergänzte Materialien unter einer Baugruppe, die nicht in die Basis kommt
+    const erg = ergaenzteZeilen.value.map((e: Dict) => e.parent_pfad || e.pfad.split('/+:')[0]).filter((pp: string) => unterRaus(pp, true))
+    return [...pos, ...erg]
   })
+  // Klassenposition „rein“ ohne ergänztes Material unter derselben Baugruppe
+  function klasseOhneMaterial(p: Dict) {
+    if (p.matnr || p.postp !== 'K' || manuell(p) !== 'rein') return false
+    return !ergaenzteZeilen.value.some((e: Dict) => (e.parent_pfad || e.pfad.split('/+:')[0]) === p.parent)
+  }
   // Kennzahlen wie im Export (D26): Regelergebnis + manuelle Entscheidungen + Ergänzungen
   const kennzahlen = computed(() => {
     const ps: Dict[] = daten.value?.positionen || []
     let basis = 0, offen = 0, aus = 0
     for (const p of ps) {
       const m = manuell(p)
-      if (IM_ERGEBNIS.has(p.status) || (m === 'rein' && p.matnr)) basis++
+      if (IM_ERGEBNIS.has(p.status) && !unterRaus(p.id) || (m === 'rein' && p.matnr && !unterRaus(p.id))) basis++
       else if (OFFEN_STATUS.has(p.status) && !m) offen++
       else aus++
     }
-    return { basis, offen, aus, ergaenzt: reviewStand.value.ergaenzt }
+    const ergaenzt = ergaenzteZeilen.value.filter((e: Dict) => !unterRaus(e.parent_pfad || e.pfad.split('/+:')[0], true)).length
+    return { basis, offen, aus, ergaenzt }
   })
 
   // Bestätigbar (D25): regelentschiedene Zeilen „richtig“, offene Zeilen manuell „Sollte rein/raus“
   function urteilPasst(p: Dict, u: Dict | null = urteilVon(p.id)) {
     if (!u?.urteil) return false
+    if (klasseOhneMaterial(p)) return false
     return OFFEN_STATUS.has(p.status) ? u.urteil === 'fehlt' || u.urteil === 'gehoert_nicht_rein' : u.urteil === 'richtig'
   }
 
@@ -552,6 +564,8 @@ export const useArbeit = defineStore('arbeit', () => {
     if (widersprueche.value.length) {
       return { text: `${mehrzahl(widersprueche.value.length, 'Position ist', 'Positionen sind')} „Sollte rein“, ihre Baugruppe aber nicht in der Basis – bitte eines von beiden ändern.`, ziel: widersprueche.value[0] }
     }
+    const klasse = d.positionen.find((p: Dict) => klasseOhneMaterial(p))
+    if (klasse) return { text: `Klassenposition ${klasse.posnr}: „Sollte rein“ braucht das eingesetzte Material – bitte über „Ergänzen“ eintragen.`, ziel: klasse.id }
     const ohne = d.positionen.filter((p: Dict) => !urteilVon(p.id))
     if (ohne.length && !rs.bewertet) return null
     if (ohne.length) return { text: `Noch ${mehrzahl(ohne.length, 'Zeile', 'Zeilen')} ohne Urteil.`, ziel: ohne[0].id }
@@ -683,7 +697,7 @@ export const useArbeit = defineStore('arbeit', () => {
     setzeUrteil, setzeKommentar, alleSichtbarenRichtig, ergaenze, entferneErgaenzung, bewertungVerwerfen, sperrGrund,
     bestaetigbar, speichereReview, bestaetige, bestaetigungAufheben, exportiere, ladeRegelAnsicht, berechneAuswirkung,
     oeffneMerkmal, setzeMerkmalName, offeneFragen, ladeServerEntwurf, entwurfGeaendert, speichereLokal, bewertenGesperrt,
-    entwurfSofortSichern, urteilPasst, manuell, widersprueche, kennzahlen, regelnVeraltet, pruefeRegelstand,
+    entwurfSofortSichern, urteilPasst, manuell, klasseOhneMaterial, unterRaus, widersprueche, kennzahlen, regelnVeraltet, pruefeRegelstand,
     aktualisiereRegeln, startKontext,
     klappeTrefferAuf,
   }

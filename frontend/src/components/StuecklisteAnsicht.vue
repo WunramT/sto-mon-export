@@ -28,7 +28,7 @@
             </div>
             <div v-else-if="d.review?.stand" class="text-caption text-2">Zuletzt bewertet von {{ d.review.von }} · {{ fmtZeit(d.review.stand) }}</div>
           </div>
-          <v-tooltip text="Basis-Stückliste nach dem übernommenen Regelstand als CSV im SAP-Format (D19)">
+          <v-tooltip text="Basis-Stückliste als CSV im SAP-Format: übernommene Regeln + gespeicherte manuelle Entscheidungen und Ergänzungen (ohne Entwurf und ungespeicherte Bewertungen)">
             <template #activator="{ props }">
               <v-btn v-bind="props" variant="outlined" size="small" prepend-icon="mdi-download" :loading="exportLaedt" data-test="export-knopf" @click="exportiere">
                 SAP-Format
@@ -76,14 +76,14 @@
           <div class="fortschritt">
             <div class="fz">
               <strong>Bewertet: {{ rs.bewertet }} von {{ rs.alle }}</strong>
-              <span v-if="rs.ungespeichert" class="ungespeichert"> · {{ rs.ungespeichert }} nicht gespeichert</span>
+              <span v-if="rs.ungespeichert" class="ungespeichert"> · {{ rs.ungespeichert }} ungespeichert</span>
               <span v-if="rs.ergaenzt" class="text-2"> · {{ rs.ergaenzt }} ergänzt</span>
             </div>
             <v-progress-linear :model-value="rs.alle ? (100 * rs.bewertet) / rs.alle : 0" color="success" bg-color="#dfe3e7" height="5" rounded />
           </div>
           <div class="knoepfe">
-            <v-btn size="small" variant="outlined" :disabled="Boolean(a.bewertenGesperrt)" prepend-icon="mdi-check-all" class="sek" aria-label="Angezeigte als Richtig" title="Alle angezeigten Zeilen ohne Urteil als „Richtig“ markieren" @click="a.alleSichtbarenRichtig()"><span class="btxt">Angezeigte als Richtig</span></v-btn>
-            <v-btn size="small" variant="outlined" :disabled="Boolean(a.bewertenGesperrt)" prepend-icon="mdi-plus" class="sek" aria-label="Material ergänzen" title="Fehlendes Material ergänzen" @click="ui.oeffne('ergaenzen', { parentId: d.matnr })"><span class="btxt">Ergänzen</span></v-btn>
+            <v-btn size="small" variant="outlined" :disabled="Boolean(a.bewertenGesperrt)" prepend-icon="mdi-check-all" class="sek" aria-label="Angezeigte als Richtig" title="Alle angezeigten Zeilen ohne Urteil als „Richtig“ markieren" @click="a.alleSichtbarenRichtig()"><span class="btxt">Angezeigte als Richtig</span><span class="btxt-kurz">Alle ✓</span></v-btn>
+            <v-btn size="small" variant="outlined" :disabled="Boolean(a.bewertenGesperrt)" prepend-icon="mdi-plus" aria-label="Material ergänzen" title="Fehlendes Material ergänzen" @click="ui.oeffne('ergaenzen', { parentId: d.matnr })">Ergänzen</v-btn>
             <v-btn v-if="rs.ungespeichert" size="small" variant="text" @click="verwerfeBewertung">Verwerfen</v-btn>
             <v-btn size="small" :color="rs.ungespeichert ? 'primary' : undefined" :variant="rs.ungespeichert ? 'flat' : 'outlined'"
               :disabled="!rs.ungespeichert || Boolean(a.bewertenGesperrt)" :loading="speichert" prepend-icon="mdi-content-save-outline" data-test="speichern-knopf" @click="speichere">
@@ -99,7 +99,13 @@
           </div>
         </div>
 
-        <v-alert v-if="d.review?.bestaetigt" type="success" variant="tonal" density="compact" class="mt-2 hinweis" icon="mdi-lock-outline">
+        <v-alert v-if="d.review?.bestaetigt && d.review?.veraltet" type="warning" variant="tonal" density="compact" class="mt-2 hinweis" icon="mdi-alert-decagram-outline">
+          <div class="d-flex align-center ga-3">
+            <span class="flex-grow-1">Bestätigt, aber seit der Bestätigung haben Regeländerungen {{ mehrzahl(d.review.veraltet, 'Position', 'Positionen') }} verändert – die Bestätigung passt nicht mehr zum Export. Bitte aufheben und neu bewerten.</span>
+            <v-btn size="x-small" variant="outlined" @click="aufheben">Aufheben</v-btn>
+          </div>
+        </v-alert>
+        <v-alert v-else-if="d.review?.bestaetigt" type="success" variant="tonal" density="compact" class="mt-2 hinweis" icon="mdi-lock-outline">
           Bestätigt und gesperrt – das Material dient als Referenz. Zum Ändern der Bewertung erst die Bestätigung aufheben.
         </v-alert>
         <v-alert v-if="a.sperrGrund && a.entwurfLeer" type="info" variant="tonal" density="compact" class="mt-2 hinweis">
@@ -111,14 +117,14 @@
         <v-alert v-if="!a.entwurfLeer" type="info" variant="tonal" color="deep-purple" density="compact" class="mt-2 hinweis" icon="mdi-eye-outline">
           Sie sehen die Vorschau Ihres Entwurfs. Bewerten ist erst nach „Übernehmen“ oder „Verwerfen“ möglich.
         </v-alert>
-        <v-alert v-if="d.review?.veraltet" type="warning" variant="tonal" density="compact" class="mt-2 hinweis">
+        <v-alert v-if="d.review?.veraltet && !d.review?.bestaetigt" type="warning" variant="tonal" density="compact" class="mt-2 hinweis">
           Seit der letzten Bewertung haben sich Regeln geändert: {{ mehrzahl(d.review.veraltet, 'Position hat', 'Positionen haben') }} jetzt einen anderen Status. Bitte diese Zeilen neu bewerten.
         </v-alert>
         <v-alert v-if="d.warnungen?.length" type="info" variant="tonal" density="compact" class="mt-2 hinweis">{{ d.warnungen.join(' · ') }}</v-alert>
       </header>
 
       <div class="baum-kopf" role="presentation">
-        <div>Position · Material</div><div class="r" title="Menge gesamt, bezogen auf 1 Stück des Materials">Menge</div><div>Status</div><div class="r">Bewertung</div>
+        <div>Position · Material</div><div class="r" title="Menge gesamt, bezogen auf 1 Stück des Materials (der SAP-Export enthält die Menge je Baugruppe)">Menge ges.</div><div>Status</div><div class="r">Bewertung</div>
       </div>
       <div ref="baumEl" class="baum" role="tree" :aria-label="`Stückliste ${d.matnr}`" tabindex="0" @keydown="taste">
         <v-virtual-scroll v-if="zeilen.length" ref="scroller" :items="zeilen" item-height="50" height="100%">
@@ -133,7 +139,7 @@
                   <div class="kt">unter {{ item.e.parent_matnr }}<template v-if="item.e.kommentar"> – {{ item.e.kommentar }}</template></div>
                 </div>
               </div>
-              <div class="menge mono">{{ fmtMenge(item.e.menge, item.e.meins || 'ST') }}</div>
+              <div class="menge mono" title="Menge je Baugruppe (wie eingegeben)">{{ fmtMenge(item.e.menge, item.e.meins || 'ST') }}<small class="text-3"> je Bgr.</small></div>
               <div><span class="st st-ergaenzt"><span class="pkt" />{{ item.e.lokal ? 'ergänzt · ungespeichert' : 'ergänzt' }}</span></div>
               <div class="r"><v-btn size="x-small" variant="outlined" :disabled="Boolean(a.bewertenGesperrt)" @click="a.entferneErgaenzung(item.e)">Entfernen</v-btn></div>
             </div>
@@ -197,6 +203,12 @@ watch(() => a.auswahl, (id) => nextTick(() => {
   if (!el) scrolle(id)
 }))
 
+// nach einem Urteil per Tastatur zur nächsten Zeile
+function weiter(ids: string[]) {
+  const i = ids.indexOf(a.auswahl as string)
+  if (i >= 0 && i < ids.length - 1) a.auswahl = ids[i + 1]
+}
+
 function taste(ev: KeyboardEvent) {
   if (['INPUT', 'TEXTAREA'].includes((ev.target as HTMLElement)?.tagName)) return
   const ids = a.sichtbar.reihenfolge.map((x) => x.p.id)
@@ -210,19 +222,19 @@ function taste(ev: KeyboardEvent) {
     if (!p) return
     const urteil = OFFEN_STATUS.has(p.status) ? 'gehoert_nicht_rein' : IM_ERGEBNIS.has(p.status) ? 'gehoert_nicht_rein' : 'fehlt'
     a.setzeUrteil(a.auswahl, urteil)
+    weiter(ids)
   }
   else if (a.auswahl && !a.bewertenGesperrt && (ev.key === 'e' || ev.key === 'E')) {
     ev.preventDefault()
     const p = a.sichtbar.reihenfolge.find((x) => x.p.id === a.auswahl)?.p
-    if (p && OFFEN_STATUS.has(p.status)) a.setzeUrteil(a.auswahl, 'fehlt')
+    if (p && OFFEN_STATUS.has(p.status)) { a.setzeUrteil(a.auswahl, 'fehlt'); weiter(ids) }
   }
   else if (a.auswahl && !a.bewertenGesperrt && (ev.key === 'r' || ev.key === 'R')) {
     ev.preventDefault()
     const p = a.sichtbar.reihenfolge.find((x) => x.p.id === a.auswahl)?.p
     if (p && OFFEN_STATUS.has(p.status)) { ui.melde('„Manuell prüfen“ lässt sich nicht als „Richtig“ markieren – „Sollte rein“ (E) oder „Sollte raus“ (F) wählen.'); return }
     a.setzeUrteil(a.auswahl, 'richtig')  // setzt nur; Entfernen mit Entf/Rücktaste
-    const i2 = ids.indexOf(a.auswahl)
-    if (i2 >= 0 && i2 < ids.length - 1) a.auswahl = ids[i2 + 1]  // weiter zur nächsten Zeile
+    weiter(ids)
   }
   else if (a.auswahl && !a.bewertenGesperrt && (ev.key === 'Delete' || ev.key === 'Backspace')) {
     ev.preventDefault()
@@ -266,6 +278,11 @@ async function aufheben() {
 }
 
 async function exportiere() {
+  if (d.value.review?.bestaetigt && d.value.review?.veraltet) {
+    const ok = await ui.frage({ titel: 'Bestätigung veraltet', text: 'Seit der Bestätigung haben Regeländerungen dieses Material verändert. Der Export zeigt den aktuellen Stand, nicht den bestätigten.', ja: 'Trotzdem exportieren' })
+    if (!ok) return
+  }
+  if (!a.entwurfLeer || rs.value.ungespeichert) ui.melde('Hinweis: Der Export enthält den gespeicherten Stand – ohne Ihren Entwurf und ohne ungespeicherte Bewertungen.')
   exportLaedt.value = true
   try { await a.exportiere(d.value.matnr) } catch (e) { ui.melde((e as Error).message, true) } finally { exportLaedt.value = false }
 }
@@ -313,6 +330,7 @@ async function exportiere() {
 .pkt-ergaenzt { background: var(--entwurf); }
 .menge { text-align: right; font-size: 13px; }
 .kennzahl .kurz { display: none; }
+.btxt-kurz { display: none; }
 .langsam { position: absolute; top: 8px; right: 12px; z-index: 3; max-width: 420px; }
 @media (max-width: 1440px) {
   .baum-kopf, :deep(.zeile) { grid-template-columns: minmax(160px, 1fr) 76px 150px 76px; gap: 8px; padding: 0 12px; }
@@ -326,6 +344,7 @@ async function exportiere() {
   .kennzahl .lang { display: none; }
   .kennzahl .kurz { display: inline; }
   .sek .btxt { display: none; }
+  .sek .btxt-kurz { display: inline; }
   .sek :deep(.v-btn__prepend) { margin-inline: 0 !important; }
   .werkzeuge { flex-wrap: nowrap; }
   .baum-suche { flex: 1 1 100px; min-width: 90px; max-width: 200px; }

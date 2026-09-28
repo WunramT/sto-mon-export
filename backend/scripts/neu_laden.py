@@ -28,8 +28,13 @@ def aufruf(methode: str, pfad: str, daten: dict | None = None, token: str | None
 
 def main() -> None:
     token = aufruf("POST", "/auth/login", {"passwort": os.environ.get("MASTER_PASSWORD_ADMIN", "")})["access_token"]
-    info = aufruf("POST", "/datenstand/neu-laden", token=token)
-    print(f"Ladevorgang gestartet: {len(info['dateien'])} Dateien in {info['exports_dir']}")
+    info = aufruf("GET", "/datenstand", token=token)
+    if info.get("zustand") == "laedt":
+        # z. B. erster Start mit leerer Datenbank: das Backend lädt schon von selbst → nur abwarten
+        print("Es läuft bereits ein Ladevorgang – warte darauf.")
+    else:
+        info = aufruf("POST", "/datenstand/neu-laden", token=token)
+        print(f"Ladevorgang gestartet: {len(info['dateien'])} Dateien in {info['exports_dir']}")
     if "--warten" not in sys.argv:
         return
     while True:

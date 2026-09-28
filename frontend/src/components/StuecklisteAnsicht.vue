@@ -1,7 +1,10 @@
 <template>
   <div class="stueckliste">
     <div v-if="!a.daten" class="leer-hinweis">
-      <v-progress-circular v-if="a.laedt" indeterminate color="primary" />
+      <template v-if="a.laedt">
+        <v-progress-circular indeterminate color="primary" />
+        <p v-if="langsam" class="text-body-2 mt-4">Der Server antwortet gerade langsam … Die Anfrage läuft weiter.</p>
+      </template>
       <span v-else>Links ein Material wählen.</span>
     </div>
 
@@ -13,6 +16,7 @@
 
     <template v-else>
       <v-progress-linear :active="a.laedt" indeterminate color="primary" height="2" absolute />
+      <v-alert v-if="a.laedt && langsam" type="info" variant="tonal" density="compact" class="langsam">Der Server antwortet gerade langsam – die Berechnung läuft weiter …</v-alert>
       <header class="kopf">
         <div class="titelzeile">
           <div class="min-w-0">
@@ -36,19 +40,19 @@
         <div class="kennzahlen">
           <button type="button" class="kennzahl k-basis" :class="{ aktiv: a.filter === 'ergebnis' }" @click="umschalten('ergebnis')">
             <span class="wert mono">{{ n('basis', 'unbedingt') }}<small v-if="rs.ergaenzt"> + {{ rs.ergaenzt }}</small></span>
-            <span class="name">in der Basis-Stückliste</span>
+            <span class="name"><span class="lang">in der Basis-Stückliste</span><span class="kurz">in Basis</span></span>
           </button>
           <button type="button" class="kennzahl k-offen" :class="{ aktiv: a.filter === 'offen' }" @click="umschalten('offen')">
             <span class="wert mono">{{ n('manuell_prüfen', 'unterhalb_manuell') }}</span>
-            <span class="name">offen – manuell prüfen</span>
+            <span class="name"><span class="lang">offen – manuell prüfen</span><span class="kurz">offen</span></span>
           </button>
           <button type="button" class="kennzahl k-aus" :class="{ aktiv: a.filter === 'raus' }" @click="umschalten('raus')">
             <span class="wert mono">{{ n('ausgeschlossen', 'ausgeschlossen_vererbt', 'ignoriert') }}</span>
-            <span class="name">nicht in der Basis</span>
+            <span class="name"><span class="lang">nicht in der Basis</span><span class="kurz">nicht Basis</span></span>
           </button>
           <button v-if="!a.entwurfLeer" type="button" class="kennzahl k-entwurf" :class="{ aktiv: a.filter === 'geaendert' }" @click="umschalten('geaendert')">
             <span class="wert mono">{{ d.geaendert }}</span>
-            <span class="name">durch Entwurf geändert</span>
+            <span class="name"><span class="lang">durch Entwurf geändert</span><span class="kurz">geändert</span></span>
           </button>
         </div>
 
@@ -57,6 +61,7 @@
             <v-btn value="alle" size="small">Alle</v-btn>
             <v-btn value="offen" size="small">Offene</v-btn>
             <v-btn value="ergebnis" size="small">Basis-Ergebnis</v-btn>
+            <v-btn value="raus" size="small">Nicht Basis</v-btn>
             <v-btn value="unbewertet" size="small">Unbewertet</v-btn>
             <v-btn v-if="!a.entwurfLeer" value="geaendert" size="small">Geändert</v-btn>
           </v-btn-toggle>
@@ -77,8 +82,8 @@
             <v-progress-linear :model-value="rs.alle ? (100 * rs.bewertet) / rs.alle : 0" color="success" bg-color="#dfe3e7" height="5" rounded />
           </div>
           <div class="knoepfe">
-            <v-btn size="small" variant="outlined" :disabled="Boolean(a.bewertenGesperrt)" prepend-icon="mdi-check-all" @click="a.alleSichtbarenRichtig()">Angezeigte als Richtig</v-btn>
-            <v-btn size="small" variant="outlined" :disabled="Boolean(a.bewertenGesperrt)" prepend-icon="mdi-plus" @click="ui.oeffne('ergaenzen', { parentId: d.matnr })">Ergänzen</v-btn>
+            <v-btn size="small" variant="outlined" :disabled="Boolean(a.bewertenGesperrt)" prepend-icon="mdi-check-all" class="sek" aria-label="Angezeigte als Richtig" title="Alle angezeigten Zeilen ohne Urteil als „Richtig“ markieren" @click="a.alleSichtbarenRichtig()"><span class="btxt">Angezeigte als Richtig</span></v-btn>
+            <v-btn size="small" variant="outlined" :disabled="Boolean(a.bewertenGesperrt)" prepend-icon="mdi-plus" class="sek" aria-label="Material ergänzen" title="Fehlendes Material ergänzen" @click="ui.oeffne('ergaenzen', { parentId: d.matnr })"><span class="btxt">Ergänzen</span></v-btn>
             <v-btn v-if="rs.ungespeichert" size="small" variant="text" @click="verwerfeBewertung">Verwerfen</v-btn>
             <v-btn size="small" :color="rs.ungespeichert ? 'primary' : undefined" :variant="rs.ungespeichert ? 'flat' : 'outlined'"
               :disabled="!rs.ungespeichert || Boolean(a.bewertenGesperrt)" :loading="speichert" prepend-icon="mdi-content-save-outline" data-test="speichern-knopf" @click="speichere">
@@ -145,13 +150,21 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useArbeit } from '@/stores/arbeit'
 import { useUi } from '@/stores/ui'
 import BaumZeile from '@/components/BaumZeile.vue'
-import { OFFEN_STATUS, fmtDatum, fmtMenge, fmtZeit, mehrzahl } from '@/utils/texte'
+import { IM_ERGEBNIS, OFFEN_STATUS, fmtDatum, fmtMenge, fmtZeit, mehrzahl } from '@/utils/texte'
 
 const a = useArbeit()
 const ui = useUi()
 const d = computed(() => a.daten as any)
 const rs = computed(() => a.reviewStand)
 const speichert = ref(false)
+// Hinweis, wenn eine Anfrage ungewöhnlich lange dauert (Server hängt, große Stückliste)
+const langsam = ref(false)
+let langsamTimer: number | undefined
+watch(() => a.laedt, (l) => {
+  clearTimeout(langsamTimer)
+  langsam.value = false
+  if (l) langsamTimer = window.setTimeout(() => { langsam.value = true }, 8000)
+})
 const exportLaedt = ref(false)
 const scroller = ref<any>(null)
 const baumEl = ref<HTMLElement | null>(null)
@@ -190,6 +203,18 @@ function taste(ev: KeyboardEvent) {
   if (ev.key === 'ArrowDown') { ev.preventDefault(); a.auswahl = ids[Math.min(ids.length - 1, i + 1)] ?? ids[0] }
   else if (ev.key === 'ArrowUp') { ev.preventDefault(); a.auswahl = ids[Math.max(0, i - 1)] ?? ids[0] }
   else if ((ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') && a.auswahl) { ev.preventDefault(); a.klappe(a.auswahl, ev.key === 'ArrowRight') }
+  else if (a.auswahl && !a.bewertenGesperrt && (ev.key === 'f' || ev.key === 'F')) {
+    ev.preventDefault()
+    const p = a.sichtbar.reihenfolge.find((x) => x.p.id === a.auswahl)?.p
+    if (!p) return
+    const urteil = OFFEN_STATUS.has(p.status) ? 'gehoert_nicht_rein' : IM_ERGEBNIS.has(p.status) ? 'gehoert_nicht_rein' : 'fehlt'
+    a.setzeUrteil(a.auswahl, a.urteilVon(a.auswahl)?.urteil === urteil ? null : urteil)
+  }
+  else if (a.auswahl && !a.bewertenGesperrt && (ev.key === 'e' || ev.key === 'E')) {
+    ev.preventDefault()
+    const p = a.sichtbar.reihenfolge.find((x) => x.p.id === a.auswahl)?.p
+    if (p && OFFEN_STATUS.has(p.status)) a.setzeUrteil(a.auswahl, a.urteilVon(a.auswahl)?.urteil === 'fehlt' ? null : 'fehlt')
+  }
   else if (a.auswahl && !a.bewertenGesperrt && (ev.key === 'r' || ev.key === 'R')) {
     ev.preventDefault()
     const p = a.sichtbar.reihenfolge.find((x) => x.p.id === a.auswahl)?.p
@@ -274,5 +299,29 @@ async function exportiere() {
 .pkt { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .pkt-ergaenzt { background: var(--entwurf); }
 .menge { text-align: right; font-size: 13px; }
-@media (max-width: 1440px) { .baum-kopf, :deep(.zeile) { grid-template-columns: minmax(160px, 1fr) 76px 150px 76px; gap: 8px; padding: 0 12px; } .kopf { padding: 12px 12px 8px; } .kennzahl { min-width: 0; flex: 1 1 120px; } }
+.kennzahl .kurz { display: none; }
+.langsam { position: absolute; top: 8px; right: 12px; z-index: 3; max-width: 420px; }
+@media (max-width: 1440px) {
+  .baum-kopf, :deep(.zeile) { grid-template-columns: minmax(160px, 1fr) 76px 150px 76px; gap: 8px; padding: 0 12px; }
+  .kopf { padding: 10px 12px 8px; }
+  .mat-titel { font-size: 18px; }
+  /* Kennzahlen als eine kompakte Zeile, damit der Baum Platz behält */
+  .kennzahlen { margin: 8px 0; gap: 6px; flex-wrap: nowrap; }
+  .kennzahl { min-width: 0; flex: 1 1 0; flex-direction: row; align-items: baseline; gap: 6px; padding: 4px 10px; }
+  .kennzahl .wert { font-size: 16px; }
+  .kennzahl .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .kennzahl .lang { display: none; }
+  .kennzahl .kurz { display: inline; }
+  .sek .btxt { display: none; }
+  .sek :deep(.v-btn__prepend) { margin-inline: 0 !important; }
+  .werkzeuge { flex-wrap: nowrap; }
+  .baum-suche { flex: 1 1 100px; min-width: 90px; max-width: 200px; }
+  .segment :deep(.v-btn) { padding: 0 8px; }
+  .review-leiste { margin-top: 8px; padding: 6px 8px; flex-wrap: nowrap; }
+  .fortschritt { flex: 1 1 120px; }
+  .fz { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+  .knoepfe { flex-wrap: nowrap; }
+  .hinweis :deep(.v-alert__content) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hinweis { padding-top: 4px !important; padding-bottom: 4px !important; }
+}
 </style>

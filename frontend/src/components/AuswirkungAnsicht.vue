@@ -33,9 +33,9 @@
             <td>
               <div v-for="(x, i) in m.wechsel" :key="i" class="wechsel">
                 <span class="mono">{{ x.anzahl }}×</span>
-                <span v-if="x.von" class="st" :class="`st-${x.von}`"><span class="pkt" />{{ STATUS[x.von]?.kurz }}</span><span v-else class="text-3">neu</span>
+                <span v-if="x.von" class="st" :class="`st-${x.von}`"><span class="pkt" />{{ STATUS[x.von]?.text }}</span><span v-else class="text-3">neu</span>
                 <v-icon icon="mdi-arrow-right" size="14" class="text-3" />
-                <span v-if="x.nach" class="st" :class="`st-${x.nach}`"><span class="pkt" />{{ STATUS[x.nach]?.kurz }}</span><span v-else class="text-3">entfällt</span>
+                <span v-if="x.nach" class="st" :class="`st-${x.nach}`"><span class="pkt" />{{ STATUS[x.nach]?.text }}</span><span v-else class="text-3">entfällt</span>
               </div>
             </td>
             <td class="mono">{{ m.vorher_im_ergebnis }} <v-icon icon="mdi-arrow-right" size="14" class="text-3" /> <strong>{{ m.nachher_im_ergebnis }}</strong>

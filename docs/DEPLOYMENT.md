@@ -23,6 +23,13 @@ Browser ──> Host-nginx (https://iot.polipol-service.de/test/konfig-stuecklis
    letzte 20) → alte Container als `*-previous` parken → Backend starten (Health) → Frontend starten (Health +
    Durchstich `/api/health`) → optional Exporte neu laden → Aufräumen. Bei Fehler starten die alten Container wieder.
 
+Das Jenkinsfile lässt sich ohne Jenkins prüfen (CI-Job `lint:jenkinsfile`): `groovy deploy/jenkinsfile-pruefen.groovy
+Jenkinsfile test` rendert alle Remote-Befehle nach `build/jenkins-befehle-test.sh` und prüft sie mit `bash -n`.
+
+Rollback: nur wenn die alten Container schon geparkt waren (Fehler bei Host-Prüfung, Images oder Datenbank lassen
+die laufende Version unberührt), auch bei Abbruch/Timeout (`aborted`). Sobald das neue Frontend gesund ist, wird
+nicht mehr zurückgerollt; ein Fehler beim Neuladen der Exporte macht den Build nur UNSTABLE.
+
 ## Einmalig auf dem Host
 
 ```bash
@@ -80,4 +87,8 @@ docker restart konfig-stueckliste-export_backend_test
 - `docker compose up --build` → http://localhost:3000 (Passwort `test`, Beispieldaten).
 - `deploy/lokal-deploy.sh` spielt die Jenkins-Schritte mit denselben `docker run`-Aufrufen nach, inkl. Host-nginx →
   http://localhost:8088/test/konfig-stueckliste-export/.
-- E2E: `cd frontend && E2E_BASE_URL=http://localhost:8088/test/konfig-stueckliste-export npx playwright test`.
+- E2E: `cd frontend && E2E_BASE_URL=http://localhost:8088/test/konfig-stueckliste-export npx playwright test`
+  (wiederholbar; für frische Beispieldaten vorher `RESET=1 deploy/lokal-deploy.sh`).
+
+Host-nginx: Die Login-Bremse im Frontend-nginx nimmt als Client-Adresse den letzten Eintrag in `X-Forwarded-For`
+– der Host-nginx muss ihn mit `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` setzen (siehe oben).

@@ -15,11 +15,13 @@
         <li>Material wählen, offene Fragen rechts klären – jede Regeländerung ist zunächst ein <strong>Entwurf</strong> nur für Sie.</li>
         <li>„Auswirkung auf alle Materialien“ zeigt, welche anderen Stücklisten sich mitändern.</li>
         <li>„Übernehmen“ speichert die Regeln für alle (mit Name und Begründung).</li>
-        <li>Zeilen bewerten: „Richtig“, wenn der Status passt; „Sollte raus“ bzw. „Sollte rein“, wenn er falsch ist. Speichern, dann das Material bestätigen.</li>
+        <li>Zeilen bewerten: „Richtig“, wenn der Status passt; „Sollte raus“ bzw. „Sollte rein“, wenn er falsch ist. Speichern.</li>
+        <li>Positionen „Manuell prüfen“ (z. B. Klassenpositionen) entscheiden Sie selbst mit „Sollte rein“ oder „Sollte raus“ – oder klären vorher die Regelfrage.</li>
+        <li>Bestätigen geht, sobald alle Zeilen gespeichert sind, alle regelentschiedenen Zeilen „Richtig“ und alle offenen manuell entschieden sind. Der SAP-Format-Export enthält die manuell hinzugenommenen und ergänzten Materialien.</li>
         <li>Ihr Entwurf und Ihre ungespeicherten Bewertungen bleiben auch nach dem Neuladen erhalten.</li>
       </ol>
       <h3 class="abschnitt-titel">Tastatur im Baum</h3>
-      <p class="text-2 mb-0"><kbd>↑</kbd> <kbd>↓</kbd> Position wählen · <kbd>←</kbd> <kbd>→</kbd> zu-/aufklappen · <kbd>R</kbd> als „Richtig“ markieren</p>
+      <p class="text-2 mb-0"><kbd>↑</kbd> <kbd>↓</kbd> Position wählen · <kbd>←</kbd> <kbd>→</kbd> zu-/aufklappen · <kbd>R</kbd> Richtig · <kbd>F</kbd> Sollte raus/rein · <kbd>E</kbd> offene Position „Sollte rein“</p>
     </v-card-text>
     <v-card-actions class="px-6 pb-5">
       <v-spacer />

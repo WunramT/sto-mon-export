@@ -22,7 +22,8 @@ export function verbindeAuth(token: () => string | null, abmelden: () => void, n
   if (nichtBereit) beiNichtBereit = nichtBereit
 }
 
-const http = axios.create({ baseURL: apiBasis, timeout: 300000, headers: { 'Content-Type': 'application/json' } })
+// 60 s reichen für alles außer der Auswirkung über alle Materialien (dort eigenes Timeout)
+const http = axios.create({ baseURL: apiBasis, timeout: 60000, headers: { 'Content-Type': 'application/json' } })
 
 http.interceptors.request.use((config) => {
   const t = tokenQuelle()
@@ -47,9 +48,9 @@ function alsFehler(e: unknown): ApiFehler {
   return new ApiFehler('Server nicht erreichbar – bitte Verbindung prüfen.')
 }
 
-export async function api<T = any>(methode: string, url: string, body?: unknown): Promise<T> {
+export async function api<T = any>(methode: string, url: string, body?: unknown, timeout?: number): Promise<T> {
   try {
-    const r = await http.request<T>({ method: methode, url, data: body })
+    const r = await http.request<T>({ method: methode, url, data: body, ...(timeout ? { timeout } : {}) })
     return r.data
   } catch (e) {
     const f = alsFehler(e)

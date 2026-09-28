@@ -114,7 +114,7 @@ def test_entwurf_vorschau_und_auswirkung(client):
 
 
 def test_uebernehmen_mit_konflikt(client, fixture_db):
-    r = client.post("/api/uebernehmen", json={"entwurf": FK_BASIS, "von": "Test", "begruendung": "Test"})
+    r = client.post("/api/uebernehmen", json={"entwurf": FK_BASIS, "von": "Test", "begruendung": "Test Übernahme"})
     assert r.status_code == 200, r.text
     assert rules.lade_regelstand(fixture_db).regel("SITZQUALI", "FK") == rules.Regel(
         "SITZQUALI", "FK", "BASIS", 2
@@ -158,7 +158,7 @@ def test_review_bestaetigen_und_regression(client, fixture_db, regeln_sichern):
     assert client.post("/api/review/90000006", json={"von": "Erika", "urteile": alle}).status_code == 200
     # offene Position (technische Regel unentschieden) → nicht bestätigbar, auch wenn alles „richtig“ ist
     offen = client.post("/api/bestaetigen/90000006", json={"von": "Erika"})
-    assert offen.status_code == 400 and "manuell prüfen" in offen.json()["fehler"]
+    assert offen.status_code == 400 and "2 als falsch markiert" in offen.json()["fehler"]  # offen ≠ „richtig“
     rules.setze_regel(fixture_db, "PP4000_KS_VERERBEN", "vorhanden", "BASIS", 1, geaendert_von="test")
     rules.setze_regel(fixture_db, "SITZQUALI", "FK", "BASIS", 2, geaendert_von="test")
     client.app.state.datenstand.dienst.cache_leeren()
@@ -180,7 +180,8 @@ def test_review_bestaetigen_und_regression(client, fixture_db, regeln_sichern):
     client.post("/api/bestaetigen/90000006", json={"von": "Erika"})
     fk_nie = {"regeln": [{"merkmal": "SITZQUALI", "wert": "FK", "status": "NICHT_BASIS", "rang": None,
                           "vorher": {"status": "BASIS", "rang": 2}}]}  # fmt: skip
-    assert client.post("/api/uebernehmen", json={"entwurf": fk_nie, "von": "Test"}).status_code == 200
+    r = client.post("/api/uebernehmen", json={"entwurf": fk_nie, "von": "Test", "begruendung": "Test Regression"})
+    assert r.status_code == 200
     try:
         d3 = client.post("/api/material/90000006", json={"entwurf": None}).json()
         assert d3["review"]["veraltet"] == 1
@@ -190,6 +191,25 @@ def test_review_bestaetigen_und_regression(client, fixture_db, regeln_sichern):
         assert not regress.regress(fixture_db, lid2).empty
     finally:
         pass
+
+
+def test_manuelle_entscheidung_bestaetigen_und_export(client, regeln_sichern):
+    """D25: offene Positionen per „fehlt“/„gehoert_nicht_rein“ entscheiden → bestätigbar, Export folgt."""
+    d = client.post("/api/material/90000006", json={"entwurf": None}).json()
+    urteile = {p["id"]: {"urteil": "fehlt" if p["matnr"] == "10000102" else
+                         "gehoert_nicht_rein" if p["status"] == "manuell_prüfen" else "richtig"} for p in d["positionen"]}
+    r = client.post("/api/review/90000006", json={"von": "Erika", "urteile": urteile,
+                    "ergaenzt": [{"parent_pfad": "90000006", "matnr": "10000999", "menge": 3, "meins": "ST"}]})  # fmt: skip
+    assert r.status_code == 200, r.text
+    assert client.post("/api/bestaetigen/90000006", json={"von": " "}).status_code == 400
+    assert client.post("/api/bestaetigen/90000006", json={"von": "Erika"}).status_code == 200
+    csv = client.get("/api/export/90000006").text
+    assert ";10000102;" in csv and ";10000016;" not in csv and ";10000999;" in csv
+
+
+def test_uebernehmen_braucht_begruendung(client):
+    r = client.post("/api/uebernehmen", json={"entwurf": FK_BASIS, "von": "Test", "begruendung": " kurz"})
+    assert r.status_code == 400 and "begründen" in r.json()["fehler"]
 
 
 def test_review_konflikt(client):
@@ -229,7 +249,8 @@ def test_neu_laden_skript(monkeypatch):
 
     def urlopen(req, timeout):
         gesehen.append((req.get_method(), req.full_url, req.data, req.headers.get("Authorization")))
-        antwort = {"access_token": "T"} if req.full_url.endswith("/auth/login") else {"dateien": [], "exports_dir": "/x"}
+        antwort = {"access_token": "T"} if req.full_url.endswith("/auth/login") else {
+            "dateien": [], "exports_dir": "/x", "zustand": "bereit"}
         return io.BytesIO(json.dumps(antwort).encode())
 
     monkeypatch.setattr(modul.urllib.request, "urlopen", urlopen)
@@ -237,7 +258,8 @@ def test_neu_laden_skript(monkeypatch):
     monkeypatch.setattr(modul.sys, "argv", ["neu_laden.py"])
     modul.main()
     assert gesehen[0][0] == "POST" and json.loads(gesehen[0][2]) == {"passwort": "pw"}
-    assert gesehen[1][:2] == ("POST", modul.BASIS + "/datenstand/neu-laden") and gesehen[1][3] == "Bearer T"
+    assert gesehen[1][:2] == ("GET", modul.BASIS + "/datenstand")
+    assert gesehen[2][:2] == ("POST", modul.BASIS + "/datenstand/neu-laden") and gesehen[2][3] == "Bearer T"
 
 
 def test_ergaenzen_und_ungueltig(client):

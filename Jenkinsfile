@@ -222,6 +222,8 @@ pipeline {
                             ${FRONTEND_IMAGE}:${params.IMAGE_TAG_FRONTEND}
                     """
                     waitHealthy(FRONTEND_CONTAINER, 12)
+                    // neue Version läuft gesund: spätere Fehler (Laden, Aufräumen) rollen nicht mehr zurück
+                    env.GEPARKT = 'fertig'
                     // Durchstich: Frontend-nginx → Backend
                     sshCommand remote: REMOTE, command: """
                         docker exec ${FRONTEND_CONTAINER} wget -q -O - http://127.0.0.1${viteBasePath}api/health
@@ -259,29 +261,40 @@ pipeline {
     }
 
     post {
+        // failure: Stufe fehlgeschlagen; aborted: Abbruch von Hand oder timeout() – beide gleich behandeln
         failure {
-            script {
-                if (env.GEPARKT != 'true') {
-                    // Fehler vor dem Austausch (Host, Images, Datenbank): die laufende Version bleibt unberührt
-                    echo 'Fehler vor dem Austausch der Container – laufende Version bleibt unverändert, kein Rollback.'
-                    return
-                }
-                echo 'Deployment fehlgeschlagen – alte Container werden wieder gestartet.'
-                sshCommand remote: REMOTE, command: """
-                    docker logs --tail 80 ${BACKEND_CONTAINER} 2>&1 || true
-                    docker rm -f ${FRONTEND_CONTAINER} ${BACKEND_CONTAINER} >/dev/null 2>&1 || true
-                    docker inspect ${BACKEND_CONTAINER}-previous  >/dev/null 2>&1 && docker rename ${BACKEND_CONTAINER}-previous  ${BACKEND_CONTAINER}  || true
-                    docker inspect ${FRONTEND_CONTAINER}-previous >/dev/null 2>&1 && docker rename ${FRONTEND_CONTAINER}-previous ${FRONTEND_CONTAINER} || true
-                    docker start ${BACKEND_CONTAINER}  || true
-                    docker start ${FRONTEND_CONTAINER} || true
-                    echo "Rollback fertig. Sicherung der Regeln/Bewertungen liegt in ${HOST_BACKUP_DIR} (siehe docs/DEPLOYMENT.md)."
-                """
-            }
+            script { rollback() }
+        }
+        aborted {
+            script { rollback() }
         }
         success {
             echo "✓ ${PROJECT_NAME} läuft: ${params.PUBLIC_BASE_URL}${APP_PATH}"
         }
     }
+}
+
+// Alte Container wieder starten, falls der Deploy sie schon ersetzt hatte
+def rollback() {
+    if (env.GEPARKT == 'fertig') {
+        echo 'Neue Version läuft bereits gesund – kein Rollback.'
+        return
+    }
+    if (env.GEPARKT != 'true') {
+        // Fehler vor dem Austausch (Host, Images, Datenbank): die laufende Version bleibt unberührt
+        echo 'Fehler vor dem Austausch der Container – laufende Version bleibt unverändert, kein Rollback.'
+        return
+    }
+    echo 'Deployment fehlgeschlagen – alte Container werden wieder gestartet.'
+    sshCommand remote: REMOTE, command: """
+        docker logs --tail 80 ${env.BACKEND_CONTAINER} 2>&1 || true
+        docker rm -f ${env.FRONTEND_CONTAINER} ${env.BACKEND_CONTAINER} >/dev/null 2>&1 || true
+        docker inspect ${env.BACKEND_CONTAINER}-previous  >/dev/null 2>&1 && docker rename ${env.BACKEND_CONTAINER}-previous  ${env.BACKEND_CONTAINER}  || true
+        docker inspect ${env.FRONTEND_CONTAINER}-previous >/dev/null 2>&1 && docker rename ${env.FRONTEND_CONTAINER}-previous ${env.FRONTEND_CONTAINER} || true
+        docker start ${env.BACKEND_CONTAINER}  || true
+        docker start ${env.FRONTEND_CONTAINER} || true
+        echo "Rollback fertig. Sicherung der Regeln/Bewertungen liegt in ${env.HOST_BACKUP_DIR} (siehe docs/DEPLOYMENT.md)."
+    """
 }
 
 // Wartet, bis Docker den Container als healthy meldet (je Versuch 5 s)

@@ -63,4 +63,14 @@ describe('Arbeitszustand', () => {
     a.setzeUrteil('R/A', null)
     expect(a.reviewStand.ungespeichert).toBe(0)
   })
+  it('lässt offene Positionen manuell entscheiden und erst dann bestätigen', () => {
+    const a = useArbeit()
+    a.daten = { matnr: 'R', positionen: [pos('R/A', 'R', 'basis'), pos('R/K', 'R', 'manuell_prüfen')],
+      review: { urteile: { 'R/A': { urteil: 'richtig' }, 'R/K': { urteil: 'richtig' } }, ergaenzt: [] } } as any
+    expect(a.bestaetigbar).toBe(false)  // „richtig“ ist für offene Positionen keine Entscheidung
+    a.daten.review.urteile['R/K'] = { urteil: 'fehlt' }
+    expect(a.bestaetigbar).toBe(true)
+    a.setzeUrteil('R/A', 'gehoert_nicht_rein')
+    expect(a.bestaetigbar).toBe(false)  // ungespeichert und falsch
+  })
 })

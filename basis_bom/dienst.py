@@ -97,7 +97,11 @@ def erklaere(
         if p["wert"] == rules.SYSTEMWERT or werte == [rules.SYSTEMWERT]:
             text, typ = f"Gilt die technische Regel „{n}“ in der Basis?", "systemregel"
         elif p["grund"].startswith("kein_rang_fuer:"):
-            if len(werte) == 1:
+            nie = [k["wert"] for k in kandidaten.get(m, []) if k.get("status") == rules.NICHT_BASIS]
+            if werte and len(nie) == len(werte):
+                text = (f"{n}: Hier kommt nur {_liste(werte)} vor und {'ist' if len(werte) == 1 else 'sind'} „Nie Basis“ – "
+                        "welcher Wert soll auf dieser Stückliste doch gelten? Sonst die Position manuell entscheiden.")
+            elif len(werte) == 1:
                 text = f"{n}: Auf dieser Stückliste kommt nur {werte[0]} vor – ist {werte[0]} ein Basiswert?"
             elif werte:
                 text = f"{n}: Welcher der Werte {_liste(werte)} ist Basis?"
@@ -687,6 +691,9 @@ class Dienst:
                 konflikte.append({"art": "kuerzel", "alias": a["alias"], "jetzt": ist, "beim_oeffnen": soll})
         if konflikte:
             raise Konflikt(konflikte)
+        if len((begruendung or "").strip()) < 5:
+            raise Eingabefehler("Bitte kurz begründen (mindestens 5 Zeichen) – andere sollen die Entscheidung nachvollziehen können")
+        begruendung = begruendung.strip()
         aenderungen = [rules.Aenderung(r["merkmal"], r["wert"], r["status"],
                                        r.get("rang") if r["status"] == rules.BASIS else None, begruendung)
                        for r in entwurf.regeln]  # fmt: skip
@@ -749,12 +756,7 @@ class Dienst:
             raise Eingabefehler("Name fehlt")
         matnr = matnr.strip().lstrip("0")
         if pruefe_stand:
-            rows = self._letzter_review(matnr)
-            jetzt = str(rows[0]["importiert"]) if rows else None
-            if jetzt != stand:
-                wer = rows[0]["reviewer"] if rows else "jemand"
-                raise Konflikt([{"art": "review", "matnr": matnr, "von": wer, "stand": jetzt}],
-                               f"{wer} hat dieses Material inzwischen bewertet")  # fmt: skip
+            self._pruefe_review_stand(matnr, stand)
         for pfad, u in urteile.items():
             if u.get("urteil") not in URTEILE:
                 raise Eingabefehler(f"Urteil {u.get('urteil')!r} unbekannt ({pfad})")
@@ -775,6 +777,10 @@ class Dienst:
             self.eng, lauf_id, "review", {"aufloesung": erg.statistik(), "quelle": "web", "von": von}
         )
         with self.eng.begin() as con:
+            if pruefe_stand:
+                # gleichzeitiges Speichern desselben Materials serialisieren und den Stand erneut prüfen
+                con.execute(sa.text("SELECT pg_advisory_xact_lock(hashtext('review:' || :m))"), {"m": matnr})
+                self._pruefe_review_stand(matnr, stand, con)
             t = con.execute(sa.text("SELECT clock_timestamp()")).scalar()
             for pfad, u in urteile.items():
                 z = zeilen[pfad]
@@ -798,33 +804,79 @@ class Dienst:
             con.execute(sa.text("DELETE FROM basis_bom.bestaetigt WHERE root_matnr = :r"), {"r": matnr})
         return {"lauf_id": lauf_id, "urteile": len(urteile), "ergaenzt": len(ergaenzt)}
 
+    def _pruefe_review_stand(self, matnr: str, stand: str | None, con=None) -> None:
+        sql = sa.text("SELECT importiert, reviewer FROM basis_bom.review WHERE root_matnr = :m "
+                      "ORDER BY importiert DESC LIMIT 1")  # fmt: skip
+        if con is None:
+            with self.eng.connect() as c:
+                r = c.execute(sql, {"m": matnr}).first()
+        else:
+            r = con.execute(sql, {"m": matnr}).first()
+        jetzt = str(r[0]) if r else None
+        if jetzt != stand:
+            wer = r[1] if r else "jemand"
+            raise Konflikt([{"art": "review", "matnr": matnr, "von": wer, "stand": jetzt}],
+                           f"{wer} hat dieses Material inzwischen bewertet")  # fmt: skip
+
     def bestaetigung_aufheben(self, matnr: str) -> None:
         with self.eng.begin() as con:
             con.execute(sa.text("DELETE FROM basis_bom.bestaetigt WHERE root_matnr = :r"), {"r": matnr.strip().lstrip("0")})
 
+    @staticmethod
+    def _offen(status: str | None) -> bool:
+        return status in (MANUELL_PRUEFEN, UNTERHALB_MANUELL)
+
     def bestaetigen(self, matnr: str, von: str) -> dict:
+        """Bestätigen (D23/D25): jede Position hat ein Urteil – regelentschiedene „richtig“, offene („manuell
+        prüfen“) manuell „fehlt“/„gehoert_nicht_rein“ –, nichts ist seit dem Review veraltet."""
+        if not von.strip():
+            raise Eingabefehler("Name fehlt")
         matnr = matnr.strip().lstrip("0")
         rows = self._letzter_review(matnr)
         erg = self.aufloeser().loese_alle([matnr])
         aktuell = {z["pfad"]: z["status"] for z in erg.zeilen}
         urteile = {r["pfad"]: r for r in rows if r["status"] is not None}
-        offen = [p for p, st in aktuell.items() if st in (MANUELL_PRUEFEN, UNTERHALB_MANUELL)]
-        if offen:
-            raise Eingabefehler(
-                f"Bestätigen nicht möglich: {len(offen)} Position(en) sind noch „manuell prüfen“ – "
-                "erst die offenen Regelfragen klären"
-            )
         fehlend = [p for p in aktuell if p not in urteile]
-        nicht_richtig = [r for r in rows if r["urteil"] != "richtig"]
+        falsch = [p for p, r in urteile.items() if p in aktuell and (
+            r["urteil"] not in ("fehlt", "gehoert_nicht_rein") if self._offen(aktuell[p]) else r["urteil"] != "richtig")]
         veraltet = [p for p, r in urteile.items() if aktuell.get(p) != r["status"]]
-        if fehlend or nicht_richtig or veraltet:
+        if fehlend or falsch or veraltet:
             raise Eingabefehler(
-                f"Bestätigen nicht möglich: {len(fehlend)} ohne Urteil, {len(nicht_richtig)} nicht „richtig“, "
+                f"Bestätigen nicht möglich: {len(fehlend)} ohne Urteil, {len(falsch)} als falsch markiert, "
                 f"{len(veraltet)} mit geändertem Status seit dem Review"
             )
         with self.eng.begin() as con:
             con.execute(sa.text(
                 "INSERT INTO basis_bom.bestaetigt (root_matnr, bestaetigt_von) VALUES (:r, :v) "
                 "ON CONFLICT (root_matnr) DO UPDATE SET bestaetigt_von = :v, datum = current_date"),
-                {"r": matnr, "v": von})  # fmt: skip
+                {"r": matnr, "v": von.strip()})  # fmt: skip
         return {"bestaetigt": matnr}
+
+    def export_zeilen(self, matnr: str):
+        """Auflösung für den SAP-Format-Download: Regelergebnis plus die gespeicherten manuellen Entscheidungen
+        (D25) – offene Positionen mit „fehlt“ kommen hinein, ergänzte Materialien werden angehängt."""
+        import pandas as pd
+
+        matnr = matnr.strip().lstrip("0")
+        erg = self.aufloeser().loese_alle([matnr])
+        if erg.uebersprungen:
+            raise Eingabefehler(f"{matnr} kann nicht aufgelöst werden: {_grund_text(erg.uebersprungen[0]['grund'])}.")
+        df = erg.df()
+        rows = self._letzter_review(matnr)
+        manuell = {r["pfad"]: r["urteil"] for r in rows if r["status"] is not None and self._offen(r["status"])}
+        if manuell:
+            offen = df["status"].isin([MANUELL_PRUEFEN, UNTERHALB_MANUELL])
+            rein = offen & df["pfad"].map(lambda p: manuell.get(p) == "fehlt") & (df["matnr"] != "")
+            df.loc[rein, "status"] = BASIS
+        neu = []
+        for r in rows:
+            if r["status"] is None and r["matnr"]:
+                eltern = r["pfad"].split("/+:")[0]
+                ebene = eltern.count("/") + 1
+                neu.append({"root_matnr": matnr, "lfd": 10**6 + len(neu), "ebene": ebene, "stlnr": "", "posnr": "",
+                            "parent_matnr": r["parent_matnr"], "matnr": r["matnr"], "menge": r["menge"],
+                            "menge_kum": r["menge"], "meins": r["meins"] or "ST", "postp": "L", "knobj": "",
+                            "status": BASIS, "grund": "ergänzt (Review)", "pfad": r["pfad"], "spur": {}})  # fmt: skip
+        if neu:
+            df = pd.concat([df, pd.DataFrame(neu, columns=df.columns)], ignore_index=True)
+        return df

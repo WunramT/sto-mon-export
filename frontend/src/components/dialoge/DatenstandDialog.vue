@@ -9,7 +9,7 @@
       <dl class="kv mb-4">
         <dt>Stichtag</dt><dd>{{ fmtDatum(info?.stichtag) }}</dd>
         <dt>Quelle</dt><dd>{{ QUELLE[info?.quelle] || '–' }}</dd>
-        <dt>Zuletzt geladen</dt><dd>{{ info?.beendet ? `${fmtZeit(info.beendet)} (${info.dauer_s} s)` : info?.quelle === 'datenbank' ? 'vor dem letzten Neustart' : '–' }}</dd>
+        <dt>Zuletzt geladen</dt><dd>{{ info?.beendet ? `${fmtZeit(info.beendet)} (${fmtZahl(info.dauer_s)} s)` : info?.quelle === 'datenbank' ? 'vor dem letzten Neustart' : '–' }}</dd>
         <dt>Export-Verzeichnis</dt><dd class="mono">{{ info?.exports_dir }}</dd>
       </dl>
       <v-alert v-if="info?.zustand === 'laedt'" type="info" variant="tonal" density="compact" class="mb-3">
@@ -42,7 +42,7 @@ import { computed, onMounted, ref } from 'vue'
 import { api } from '@/api/client'
 import { useArbeit } from '@/stores/arbeit'
 import { useUi } from '@/stores/ui'
-import { fmtDatum, fmtGroesse, fmtZeit } from '@/utils/texte'
+import { fmtDatum, fmtGroesse, fmtZahl, fmtZeit } from '@/utils/texte'
 
 const emit = defineEmits<{ schliessen: [] }>()
 const a = useArbeit()

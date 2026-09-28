@@ -25,7 +25,7 @@
       <ul class="liste mb-3">
         <li v-for="(k, i) in konflikte" :key="i">
           <template v-if="k.art === 'regel'">{{ a.mName(k.merkmal) }} = {{ k.wert }}: jetzt {{ REGEL_STATUS[k.jetzt.status] }}<template v-if="k.jetzt.rang"> (Rang {{ k.jetzt.rang }})</template></template>
-          <template v-else>Kürzel {{ k.alias }}: jetzt {{ k.jetzt.merkmal || '–' }}</template>
+          <template v-else>Kürzel {{ k.alias }}: jetzt {{ k.jetzt.merkmal ? a.mName(k.jetzt.merkmal) : 'ohne Merkmal' }}</template>
         </li>
       </ul>
       <p class="text-body-2">Laden Sie den aktuellen Stand: Ihre übrigen Änderungen bleiben im Entwurf, die betroffenen Werte können Sie danach neu setzen.</p>

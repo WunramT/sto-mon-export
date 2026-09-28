@@ -51,3 +51,18 @@ scan:trivy:
 scan:hadolint:
   rules:
     - when: always
+
+# Jenkinsfile ohne Jenkins prüfen: Groovy-Syntax, Trockenlauf mit Parametern, bash -n für alle Remote-Befehle
+lint:jenkinsfile:
+  stage: Test
+  image: groovy:4.0-jdk17
+  script:
+    - groovy deploy/jenkinsfile-pruefen.groovy Jenkinsfile test
+    - groovy deploy/jenkinsfile-pruefen.groovy Jenkinsfile prod
+  artifacts:
+    when: always
+    paths: [build/]
+  rules:
+    - changes:
+        - Jenkinsfile
+        - deploy/**/*

@@ -37,6 +37,9 @@ export const useArbeit = defineStore('arbeit', () => {
   // Browser-Speicher je Name: wechselt jemand am selben Rechner, sieht niemand fremde Entwürfe oder Bewertungen
   const schluessel = (was: string) => `bb.${was}.${auth.name || '_'}`
   const entwurf = ref<{ regeln: Dict; aliasse: Dict }>(speicher.lies(schluessel('entwurf'), { regeln: {}, aliasse: {} }))
+  // Arbeitskontext der letzten Sitzung (einmal beim Start gelesen, danach laufend geschrieben)
+  const startKontext = speicher.lies<Dict>(schluessel('kontext'), {})
+  let kontextBereit = false
   const basisRegeln = ref<Dict>({})
   const basisAliasse = ref<Dict>({})
   const merkmale = reactive<Dict>({})
@@ -66,11 +69,11 @@ export const useArbeit = defineStore('arbeit', () => {
   // Entwurf je Name auf dem Server merken (anderer Rechner/Browser). Kurz entprellt; beim Verlassen der Seite sofort.
   let speicherTimer: number | undefined
   let serverStand = ''
-  function entwurfAnServer(beimVerlassen = false) {
+  function entwurfAnServer(beimVerlassen = false, name = auth.name) {
     clearTimeout(speicherTimer)
     speicherTimer = undefined
-    if (!auth.name || !gestartet.value) return
-    const body = JSON.stringify({ name: auth.name, entwurf: entwurf.value })
+    if (!name || !gestartet.value) return
+    const body = JSON.stringify({ name, entwurf: entwurf.value })
     if (body === serverStand) return
     serverStand = body
     if (beimVerlassen) {
@@ -84,7 +87,13 @@ export const useArbeit = defineStore('arbeit', () => {
     speicher.schreib(schluessel('entwurf'), entwurf.value)
     if (matnr.value) speicher.schreib(schluessel(`review.${matnr.value}`), { lokal: lokal.value, ergaenzt: lokalErgaenzt.value, entfernt: entfernt.value })
     clearTimeout(speicherTimer)
-    speicherTimer = window.setTimeout(() => entwurfAnServer(), 300)
+    const name = auth.name  // beim Planen festhalten: ein Namenswechsel darf den Entwurf nicht mitnehmen
+    speicherTimer = window.setTimeout(() => entwurfAnServer(false, name), 300)
+  }
+  // sofort sichern (vor Namenswechsel/Abmelden), solange Name und Token noch gelten
+  function entwurfSofortSichern() {
+    speicher.schreib(schluessel('entwurf'), entwurf.value)
+    if (speicherTimer !== undefined) entwurfAnServer(true)
   }
   window.addEventListener('pagehide', () => { if (speicherTimer !== undefined) entwurfAnServer(true) })
 
@@ -139,7 +148,7 @@ export const useArbeit = defineStore('arbeit', () => {
     return merkmale[m] || regelDaten.value?.merkmale.find((x: Dict) => x.merkmal === m) || null
   }
 
-  function wendeAn(merkmal: string, werte: Dict[]) {
+  function wendeAn(merkmal: string, werte: Dict[], neuRechnen = true) {
     // Ränge der Basis-Werte lückenlos 1..n; Entwurf = Abweichung vom übernommenen Stand
     const basis = werte.filter((w) => w.status === 'BASIS').sort((a, b) => (a.rang ?? 999) - (b.rang ?? 999))
     basis.forEach((w, i) => (w.rang = i + 1))
@@ -156,7 +165,7 @@ export const useArbeit = defineStore('arbeit', () => {
       const r = regelDaten.value.merkmale.find((x: Dict) => x.merkmal === merkmal)
       if (r && r !== m) r.werte = werte.map((w) => ({ ...(r.werte.find((x: Dict) => x.wert === w.wert) || {}), ...w }))
     }
-    entwurfGeaendert()
+    if (neuRechnen) entwurfGeaendert()
   }
 
   function setzeStatus(merkmal: string, wert: string, status: string) {
@@ -223,6 +232,14 @@ export const useArbeit = defineStore('arbeit', () => {
     await ladeBasisRegeln()
     for (const e of Object.values(entwurf.value.regeln)) e.vorher = basisRegeln.value[`${e.merkmal}|${e.wert}`] || { status: 'OFFEN', rang: null }
     for (const e of Object.values(entwurf.value.aliasse)) e.vorher = basisAliasse.value[e.alias] || { merkmal: null, status: 'OFFEN' }
+    // Ränge je betroffenem Merkmal neu durchnummerieren (übernommener Stand + verbliebener Entwurf)
+    const betroffen = new Set([...konflikte.filter((k) => k.art === 'regel').map((k) => k.merkmal), ...Object.values(entwurf.value.regeln).map((e: Dict) => e.merkmal)])
+    for (const m of betroffen) {
+      const werte: Dict = {}
+      for (const [key, r] of Object.entries(basisRegeln.value)) { const [mm, w] = key.split('|'); if (mm === m) werte[w] = { wert: w, status: r.status, rang: r.rang } }
+      for (const e of Object.values(entwurf.value.regeln)) if (e.merkmal === m) werte[e.wert] = { wert: e.wert, status: e.status, rang: e.rang }
+      wendeAn(m, Object.values(werte), false)
+    }
     entwurfGeaendert()
   }
 
@@ -269,12 +286,17 @@ export const useArbeit = defineStore('arbeit', () => {
       for (const x of d.merkmale) merkmale[x.merkmal] = x
       if (neu) {
         zu.value = new Set(d.positionen.filter((p: Dict) => p.hat_kinder && RAUS.has(p.status)).map((p: Dict) => p.id))
-        // Arbeitskontext nach Neuladen der Seite wiederherstellen (Auswahl, Filter)
-        const k = speicher.lies<Dict>(schluessel('kontext'), {})
-        const passt = k.matnr === m
-        filter.value = passt && k.filter ? k.filter : 'alle'
+        // Arbeitskontext nach Neuladen der Seite wiederherstellen (Auswahl, Filter) – nur beim ersten Material
+        const k = !kontextBereit && startKontext.matnr === m ? startKontext : {}
+        filter.value = k.filter || 'alle'
         baumQ.value = ''
-        if (passt && k.auswahl && d.positionen.some((p: Dict) => p.id === k.auswahl)) zeigePosition(k.auswahl, null, false)
+        if (k.auswahl && d.positionen.some((p: Dict) => p.id === k.auswahl)) {
+          const z = new Set(zu.value)
+          for (let x = k.auswahl; x.includes('/'); x = x.slice(0, x.lastIndexOf('/'))) z.delete(x.slice(0, x.lastIndexOf('/')))
+          zu.value = z
+          auswahl.value = k.auswahl
+        }
+        kontextBereit = true
       }
     } catch (e) {
       if (e instanceof ApiFehler && e.status === 503) { daten.value = null; return }
@@ -299,6 +321,7 @@ export const useArbeit = defineStore('arbeit', () => {
         ui.melde(`${alt} Änderung${alt === 1 ? ' war' : 'en waren'} schon übernommen und ${alt === 1 ? 'wurde' : 'wurden'} aus dem Entwurf entfernt.`)
       }
       gestartet.value = true
+      if (startKontext.ansicht && ['regeln', 'auswirkung'].includes(startKontext.ansicht)) ansicht.value = startKontext.ansicht
     } catch (e) {
       startFehler.value = (e as Error).message
     }
@@ -385,7 +408,7 @@ export const useArbeit = defineStore('arbeit', () => {
   }
 
   watch([matnr, auswahl, filter, ansicht], () => {
-    if (matnr.value) speicher.schreib(schluessel('kontext'), { matnr: matnr.value, auswahl: auswahl.value, filter: filter.value, ansicht: ansicht.value })
+    if (matnr.value && kontextBereit) speicher.schreib(schluessel('kontext'), { matnr: matnr.value, auswahl: auswahl.value, filter: filter.value, ansicht: ansicht.value })
   })
 
   // Bestätigte Materialien sind gesperrt, bis die Bestätigung aufgehoben wird; mit Entwurf wird nicht bewertet
@@ -450,8 +473,8 @@ export const useArbeit = defineStore('arbeit', () => {
     const versteckt = (daten.value?.positionen || []).filter((p: Dict) => !urteilVon(p.id)).length
     const text = n ? `${mehrzahl(n, 'Zeile', 'Zeilen')} als „Richtig“ markiert – noch nicht gespeichert.` : 'Keine weiteren Zeilen zum Markieren.'
     const zusatz = [
-      offen ? `${mehrzahl(offen, 'Position „Manuell prüfen“ bleibt', 'Positionen „Manuell prüfen“ bleiben')} offen – dort „Sollte rein/raus“ wählen oder die Regelfrage klären.` : '',
-      versteckt - offen > 0 ? `${versteckt - offen} zugeklappte oder ausgefilterte Zeilen sind noch ohne Urteil.` : '',
+      offen ? `${mehrzahl(offen, 'Position „Manuell prüfen“ bleibt', 'Positionen „Manuell prüfen“ bleiben')} offen – dort „Sollte rein/raus“ entscheiden oder die Regelfrage klären.` : '',
+      versteckt - offen > 0 ? `${mehrzahl(versteckt - offen, 'zugeklappte oder ausgefilterte Zeile ist', 'zugeklappte oder ausgefilterte Zeilen sind')} noch ohne Urteil.` : '',
     ].filter(Boolean).join(' ')
     ui.melde(zusatz ? `${text} ${zusatz}` : text)
   }
@@ -474,23 +497,24 @@ export const useArbeit = defineStore('arbeit', () => {
     speichereLokal()
   }
 
+  // Bestätigbar (D25): regelentschiedene Zeilen „richtig“, offene Zeilen manuell „Sollte rein/raus“
+  function urteilPasst(p: Dict, u: Dict | null = urteilVon(p.id)) {
+    if (!u?.urteil) return false
+    return OFFEN_STATUS.has(p.status) ? u.urteil === 'fehlt' || u.urteil === 'gehoert_nicht_rein' : u.urteil === 'richtig'
+  }
+
   const sperrGrund = computed<{ text: string; ziel?: string } | null>(() => {
     const d = daten.value
     const rs = reviewStand.value
     if (!d?.positionen || d.review?.bestaetigt) return null
     if (!entwurfLeer.value) return { text: 'Erst den Entwurf übernehmen oder verwerfen.' }
-    const offen = d.positionen.filter((p: Dict) => OFFEN_STATUS.has(p.status))
-    if (offen.length && rs.bewertet) return { text: `${mehrzahl(offen.length, 'Position ist', 'Positionen sind')} noch „Manuell prüfen“ – erst die offenen Regelfragen klären.`, ziel: offen[0].id }
     const ohne = d.positionen.filter((p: Dict) => !urteilVon(p.id))
     if (ohne.length && !rs.bewertet) return null
     if (ohne.length) return { text: `Noch ${mehrzahl(ohne.length, 'Zeile', 'Zeilen')} ohne Urteil.`, ziel: ohne[0].id }
     if (rs.ungespeichert) return { text: 'Erst speichern, dann bestätigen.' }
-    const falsch = d.positionen.filter((p: Dict) => urteilVon(p.id)?.urteil !== 'richtig')
-    if (falsch.length || rs.ergaenzt) {
-      const teile = []
-      if (falsch.length) teile.push(`${mehrzahl(falsch.length, 'Zeile', 'Zeilen')} als falsch markiert`)
-      if (rs.ergaenzt) teile.push(`${mehrzahl(rs.ergaenzt, 'Material', 'Materialien')} ergänzt`)
-      return { text: `${teile.join(', ')}. Regel anpassen und neu bewerten – oder so lassen: die Abweichung ist gespeichert.`, ziel: falsch[0]?.id }
+    const falsch = d.positionen.filter((p: Dict) => !urteilPasst(p))
+    if (falsch.length) {
+      return { text: `${mehrzahl(falsch.length, 'Zeile', 'Zeilen')} als falsch markiert. Regel anpassen und neu bewerten – oder so lassen: die Abweichung ist gespeichert.`, ziel: falsch[0]?.id }
     }
     if (d.review?.veraltet) return { text: `${mehrzahl(d.review.veraltet, 'Zeile hat', 'Zeilen haben')} seit der Bewertung einen anderen Status – bitte neu bewerten.` }
     return null
@@ -499,9 +523,8 @@ export const useArbeit = defineStore('arbeit', () => {
   const bestaetigbar = computed(() => {
     const d = daten.value
     const rs = reviewStand.value
-    if (!d?.positionen || rs.ungespeichert || !entwurfLeer.value || d.review?.veraltet || rs.ergaenzt) return false
-    if (d.positionen.some((p: Dict) => OFFEN_STATUS.has(p.status))) return false
-    return d.positionen.every((p: Dict) => d.review?.urteile?.[p.id]?.urteil === 'richtig')
+    if (!d?.positionen || rs.ungespeichert || !entwurfLeer.value || d.review?.veraltet) return false
+    return d.positionen.every((p: Dict) => urteilPasst(p, d.review?.urteile?.[p.id]))
   })
 
   async function speichereReview() {
@@ -566,7 +589,7 @@ export const useArbeit = defineStore('arbeit', () => {
 
   async function berechneAuswirkung() {
     auswirkungLaedt.value = true
-    try { auswirkung.value = await api('POST', '/auswirkung', { entwurf: entwurfPayload() }) } catch (e) { auswirkung.value = { fehler: (e as Error).message } } finally { auswirkungLaedt.value = false }
+    try { auswirkung.value = await api('POST', '/auswirkung', { entwurf: entwurfPayload() }, 300000) } catch (e) { auswirkung.value = { fehler: (e as Error).message } } finally { auswirkungLaedt.value = false }
   }
 
   async function oeffneMerkmal(merkmal: string) {
@@ -602,6 +625,7 @@ export const useArbeit = defineStore('arbeit', () => {
     setzeUrteil, setzeKommentar, alleSichtbarenRichtig, ergaenze, entferneErgaenzung, bewertungVerwerfen, sperrGrund,
     bestaetigbar, speichereReview, bestaetige, bestaetigungAufheben, exportiere, ladeRegelAnsicht, berechneAuswirkung,
     oeffneMerkmal, setzeMerkmalName, offeneFragen, ladeServerEntwurf, entwurfGeaendert, speichereLokal, bewertenGesperrt,
+    entwurfSofortSichern, urteilPasst,
     klappeTrefferAuf,
   }
 })

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { readFileSync } from 'node:fs'
 
 // Ablauf mit den Beispieldaten (tests/fixtures): Anmelden → Material → Regel-Entwurf → Auswirkung → Bewerten
 const PASSWORT = process.env.E2E_PASSWORT || 'test'
@@ -37,23 +38,45 @@ test('Material öffnen, Position erklären, Regel als Entwurf setzen', async ({ 
   await expect(page.getByRole('region', { name: 'Regel-Entwurf' })).toHaveCount(0)
 })
 
-test('Zeilen bewerten und speichern; offene Positionen sperren das Bestätigen', async ({ page }) => {
+test('Bewerten, offene Positionen manuell entscheiden, bestätigen, exportieren', async ({ page }) => {
   await page.locator('.material', { hasText: '90000006' }).click()
   await expect(page.locator('h1.mat-titel')).toContainText('90000006')
   const speichern = page.locator('[data-test="speichern-knopf"]')
-  const erste = page.locator('.zeile[data-id]', { hasText: '10000020' })
-  await erste.locator('[data-test="bew-falsch"]').click()
+  const bestaetigen = page.locator('[data-test="bestaetigen-knopf"]')
+  const zeile = (nr: string) => page.locator('.zeile[data-id]', { hasText: nr })
+  // Knöpfe sind Umschalter: nur drücken, wenn nicht schon gesetzt (Test läuft auch auf bewerteten Daten)
+  const setze = async (nr: string, knopf: string) => {
+    const k = zeile(nr).locator(`[data-test="${knopf}"]`)
+    if ((await k.getAttribute('aria-pressed')) !== 'true') await k.click()
+  }
+  // von einem abgebrochenen Lauf noch bestätigt? → erst aufheben
+  if (await page.locator('[data-test="aufheben-knopf"]').count()) {
+    await page.locator('[data-test="aufheben-knopf"]').click()
+    await page.getByRole('dialog').getByRole('button', { name: 'Aufheben' }).click()
+    await expect(page.locator('[data-test="aufheben-knopf"]')).toHaveCount(0)
+  }
+  // regelentschiedene Zeile erst falsch, dann richtig
+  await setze('10000020', 'bew-falsch')
   await page.getByRole('button', { name: 'Angezeigte als Richtig' }).click()
-  await expect(page.getByText(/„Manuell prüfen“ bleib(t|en) offen/)).toBeVisible()
-  await expect(speichern).toContainText('Speichern (')
-  await speichern.click()
-  await expect(page.getByText(/Gespeichert: \d+ Zeilen? bewertet/)).toBeVisible()
-  await erste.locator('[data-test="bew-richtig"]').click()
-  await speichern.click()
+  await setze('10000020', 'bew-richtig')
+  // offene Positionen: manuell entscheiden
+  await setze('10000102', 'bew-rein')
+  await setze('10000016', 'bew-falsch')
+  if (await speichern.isEnabled()) await speichern.click()
   await expect(speichern).toContainText('Gespeichert')
-  // 10000102 ist „Manuell prüfen“ → Bestätigen gesperrt, mit Begründung
-  await expect(page.locator('[data-test="bestaetigen-knopf"]')).toBeDisabled()
-  await expect(page.getByText(/noch „Manuell prüfen“ – erst die offenen Regelfragen klären/)).toBeVisible()
+  await expect(bestaetigen).toBeEnabled()
+  await bestaetigen.click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Bestätigen', exact: true }).click()
+  await expect(page.getByText(/Bestätigt von E2E/)).toBeVisible()
+  await expect(zeile('10000020').locator('[data-test="bew-richtig"]')).toBeDisabled()  // gesperrt
+  // SAP-Format enthält die manuell hinzugenommene Position
+  const [download] = await Promise.all([page.waitForEvent('download'), page.locator('[data-test="export-knopf"]').click()])
+  const inhalt = readFileSync(await download.path(), 'utf-8')
+  expect(inhalt).toContain(';10000102;')
+  expect(inhalt).not.toContain(';10000016;')
+  await page.locator('[data-test="aufheben-knopf"]').click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Aufheben' }).click()
+  await expect(page.getByText(/Bestätigt von E2E/)).toHaveCount(0)
 })
 
 test('Entwurf und Bewertungen bleiben beim Personenwechsel getrennt', async ({ page }) => {

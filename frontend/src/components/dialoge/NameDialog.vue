@@ -33,7 +33,7 @@ async function speichern() {
   if (wechsel && a.reviewStand.ungespeichert && !(await ui.frage({ titel: 'Name wechseln?', text: 'Ungespeicherte Bewertungen bleiben unter dem bisherigen Namen in diesem Browser erhalten.', ja: 'Wechseln' }))) return
   emit('schliessen')
   if (!wechsel) return
-  a.entwurfGeaendert()  // eigenen Entwurf noch sichern
+  a.entwurfSofortSichern()  // eigenen Entwurf unter dem bisherigen Namen sichern
   auth.setzeName(n)
   // Entwurf, Bewertungen und Kontext gehören zum Namen – frisch laden
   setTimeout(() => window.location.reload(), 400)

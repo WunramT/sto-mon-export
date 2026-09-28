@@ -4,7 +4,7 @@
       <template #activator="{ props }">
         <span v-bind="props">
           <button type="button" class="bew" :class="[k.art, { an: u?.urteil === k.urteil }]" :disabled="Boolean(sperre)"
-            :aria-pressed="u?.urteil === k.urteil" :aria-label="k.text" :data-test="`bew-${k.test}`" @click.stop="setze(k.urteil)">
+            :aria-pressed="u?.urteil === k.urteil" :aria-label="k.text" :tabindex="imBaum ? -1 : undefined" :data-test="`bew-${k.test}`" @click.stop="setze(k.urteil)">
             <v-icon :icon="k.icon" size="15" /><span class="txt">{{ k.text }}</span>
           </button>
         </span>
@@ -18,7 +18,7 @@ import { computed } from 'vue'
 import { useArbeit } from '@/stores/arbeit'
 import { IM_ERGEBNIS, OFFEN_STATUS } from '@/utils/texte'
 
-const props = defineProps<{ p: any }>()
+const props = defineProps<{ p: any; imBaum?: boolean }>()
 const a = useArbeit()
 const u = computed(() => a.urteilVon(props.p.id))
 const sperre = computed(() => a.bewertenGesperrt)

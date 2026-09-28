@@ -35,7 +35,7 @@
       <FragenListe v-if="d.hinweise.length" titel="Nicht lesbare Bedingungen (nur in SAP lösbar)" :fragen="d.hinweise" :zusatz="pos" zeigbar @klick="zeige" />
       <p v-if="(a.meta?.offen || 0) > d.fragen.length" class="unter">
         Insgesamt {{ a.meta.offen }} offene Regelfragen – alle im Reiter
-        <a href="#" @click.prevent="a.ansicht = 'regeln'">„Regeln“</a>.
+        <button type="button" class="link" @click="a.ansicht = 'regeln'">„Regeln“</button>.
       </p>
       <section class="abschnitt">
         <h3 class="abschnitt-titel">So geht's</h3>
@@ -195,6 +195,8 @@ watch(() => a.fokusMerkmal, (m) => { if (m && p.value) nextTick(() => fokus(m)) 
 .kv small { display: block; color: var(--text-3); font-size: 11.5px; }
 .einfach { padding-left: 18px; font-size: 13px; color: var(--text-2); line-height: 1.55; }
 .min-w-0 { min-width: 0; }
+.link { border: 0; background: none; padding: 0; color: var(--auswahl-rand); font-weight: 600; cursor: pointer; font-size: inherit; }
+.link:hover { text-decoration: underline; }
 .gross :deep(.bew) { width: auto; padding: 4px 10px; }
 .gross :deep(.bew .txt) { display: inline; }
 </style>

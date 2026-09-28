@@ -154,15 +154,12 @@ def merkmalname(body: MerkmalName, d: Dienst = Depends(dienst)):
 
 @router.get("/export/{matnr}")
 def export_material(matnr: str, d: Dienst = Depends(dienst)):
-    """Basis-Stückliste eines Materials im SAP-Format (D19) nach dem übernommenen Regelstand."""
+    """Basis-Stückliste eines Materials im SAP-Format (D19): übernommener Regelstand + manuelle Entscheidungen (D25)."""
     matnr = matnr.strip().lstrip("0")
-    erg = d.aufloeser().loese_alle([matnr])
-    if erg.uebersprungen:
-        raise Eingabefehler(f"{matnr} kann nicht aufgelöst werden: {erg.uebersprungen[0]['grund']}")
-    df = export.sap_format(erg.df(), d.src)
+    df = export.sap_format(d.export_zeilen(matnr), d.src)
     puffer = io.StringIO()
     df.to_csv(puffer, index=False, sep=";", lineterminator="\n")
-    daten = ("﻿" + puffer.getvalue()).encode("utf-8")  # BOM: Excel erkennt UTF-8 und Umlaute
+    daten = ("\ufeff" + puffer.getvalue()).encode("utf-8")  # BOM: Excel erkennt UTF-8 und Umlaute
     return StreamingResponse(
         io.BytesIO(daten), media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{matnr}_sap_format.csv"'},

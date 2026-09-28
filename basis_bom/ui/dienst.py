@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
 from collections import Counter
 from dataclasses import dataclass, field
@@ -161,7 +162,9 @@ def _grund_text(grund: str | None) -> str | None:
     if "KZKFG" in grund:
         return "In SAP nicht als konfigurierbares Material gekennzeichnet"
     if grund.startswith("D15"):
-        return "Mehrere Stücklisten in Werk 4000 – bitte in SAP bereinigen"
+        nr = re.findall(r"\d+", grund[3:])
+        return f"Mehrere Stücklisten ({', '.join(nr)}) in Werk 4000 – bitte in SAP bereinigen" if nr else \
+            "Mehrere Stücklisten in Werk 4000 – bitte in SAP bereinigen"
     if grund.startswith("keine Stückliste"):
         return "Keine Stückliste in Werk 4000 (Verwendung 1)"
     if grund == "keine MARA-Zeile":
@@ -415,7 +418,7 @@ class Dienst:
     def _loese(self, a: Aufloeser, matnr: str) -> tuple[list[dict], list[str]]:
         erg = a.loese_alle([matnr])
         if erg.uebersprungen:
-            raise Eingabefehler(f"{matnr} wird nicht aufgelöst: {erg.uebersprungen[0]['grund']}")
+            raise Eingabefehler(f"{matnr} kann nicht aufgelöst werden: {_grund_text(erg.uebersprungen[0]['grund'])}.")
         return erg.zeilen, erg.warnungen
 
     def material(self, matnr: str, entwurf: Entwurf | None = None) -> dict:

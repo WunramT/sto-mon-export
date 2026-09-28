@@ -282,10 +282,10 @@ function entwurfEintragText(e) {
   return `${mName(e.merkmal)}${w}: ${regelStatusText(e.vorher.status, e.vorher.rang, sys)} → ${regelStatusText(e.status, e.rang, sys)}`;
 }
 
-function merkmalKarte(m, { hierWerte = null, gewaehlt, hervor = false } = {}) {
+function merkmalKarte(m, { hierWerte = null, gewaehlt, hervor = false, vorlaeufig = false } = {}) {
   const imEntwurf = (w) => Boolean(S.entwurf.regeln[`${m.merkmal}|${w}`]);
   const basisWerte = m.werte.filter((w) => w.status === "BASIS").sort((a, b) => a.rang - b.rang);
-  let art = basisWerte.length > 1 ? "Rang 1 gewinnt vor Rang 2 … – Reihenfolge mit ▲▼ ändern" : "Rangfolge: Rang 1 gewinnt, wenn mehrere Basiswerte vorkommen";
+  let art = basisWerte.length > 1 ? "Kommen mehrere Basiswerte vor, gewinnt der kleinste Rang. Reihenfolge mit ▲▼ ändern." : "Kommen mehrere Basiswerte vor, gewinnt der kleinste Rang.";
   if (m.systemregel) art = "Technische Regel – gilt sie in der Basis?";
   if (m.sitzhoehe) art = "Automatisch: der niedrigste vorkommende Wert gewinnt";
   const karte = h("div", { class: "merkmal-karte" + (hervor ? " hervor" : ""), "data-merkmal": m.merkmal },
@@ -295,13 +295,15 @@ function merkmalKarte(m, { hierWerte = null, gewaehlt, hervor = false } = {}) {
         h("div", { class: "art" }, art, " · ",
           h("button", { type: "button", class: "umbenennen", title: "Anzeigenamen ändern (so heißt das Merkmal in dieser Oberfläche)", "aria-label": `Anzeigenamen für ${m.merkmal} ändern`,
             onclick: (ev) => { ev.stopPropagation(); namenDialog(m.merkmal); } }, "✎ Name ändern"))),
-      gewaehlt !== undefined ? h("span", { class: "status " + (gewaehlt ? "s-basis" : "s-manuell_prüfen") },
+      gewaehlt !== undefined ? h("span", { class: "status " + (gewaehlt && !vorlaeufig ? "s-basis" : "s-manuell_prüfen") },
         m.systemregel ? (gewaehlt ? "hier: gilt" : "hier: noch offen")
-          : gewaehlt ? `hier gewählt: ${gewaehlt}` : "hier: noch kein Basiswert") : null),
+          : gewaehlt && vorlaeufig ? `vorläufig ${gewaehlt} – weitere Werte unentschieden`
+            : gewaehlt ? `hier gewählt: ${gewaehlt}` : "hier: noch kein Basiswert") : null),
     m.frage ? h("div", { class: "karte-frage" }, m.frage.text,
       m.frage.beispiele?.length ? h("span", { class: "bsp" }, ` · z. B. in Bedingung ${m.frage.beispiele.map((b) => `„${b}“`).join(", ")}`) : null) : null);
   const werte = [...m.werte];
-  if (hierWerte) werte.sort((a, b) => (hierWerte.has(b.wert) - hierWerte.has(a.wert)));
+  const ord = { BASIS: 0, OFFEN: 1, NICHT_BASIS: 2 };
+  werte.sort((a, b) => ord[a.status] - ord[b.status] || (a.rang ?? 0) - (b.rang ?? 0) || String(a.wert).localeCompare(String(b.wert)));
   for (const w of werte) {
     const i = basisWerte.findIndex((x) => x.wert === w.wert);
     const knoepfe = m.systemregel
@@ -315,8 +317,8 @@ function merkmalKarte(m, { hierWerte = null, gewaehlt, hervor = false } = {}) {
       title: w.beispiele?.length ? `Kommt vor in: ${w.beispiele.join(", ")}` : unbenutzt ? "Kommt in keiner Stückliste vor – keine Entscheidung nötig" : null },
       h("div", { class: "rang" + (w.status === "BASIS" ? "" : " kein"), title: w.status === "BASIS" && !m.systemregel ? `Rang ${w.rang}` : "" },
         w.status === "BASIS" && !m.sitzhoehe && !m.systemregel ? w.rang : m.systemregel ? "" : "–"),
-      h("div", { class: "wname" }, m.systemregel ? "In der Basis:" : w.wert,
-        hier ? h("small", {}, gewaehlt === w.wert ? "★ hier gewählt" : "kommt hier vor")
+      h("div", { class: "wname" }, m.systemregel ? "Gilt in der Basis?" : w.wert,
+        hier ? h("small", {}, gewaehlt === w.wert ? (vorlaeufig ? "★ vorläufig gewählt" : "★ hier gewählt") : "kommt hier vor")
           : w.stuecklisten ? h("small", {}, `in ${w.stuecklisten} Stückliste${w.stuecklisten === 1 ? "" : "n"}`)
           : unbenutzt ? h("small", {}, "in keiner Stückliste")
             : w.vorkommen ? h("small", {}, "kommt im Material vor") : null),
@@ -662,7 +664,8 @@ function zeichneDetails() {
         const m = S.merkmale[mn];
         if (!m) return null;
         const hier = new Set((ebene?.kandidaten?.[mn] || []).map((k) => k.wert));
-        return merkmalKarte(m, { hierWerte: hier, gewaehlt: ebene ? ebene.gewaehlt[mn] ?? (mn in (ebene.gewaehlt || {}) ? null : null) : undefined, hervor: S.fokusMerkmal === mn });
+        return merkmalKarte(m, { hierWerte: hier, gewaehlt: ebene ? ebene.gewaehlt[mn] ?? null : undefined, hervor: S.fokusMerkmal === mn,
+          vorlaeufig: Boolean(ebene?.marker?.includes(`offen_neben_rang:${mn}`)) });
       })) : null,
     h("div", { class: "abschnitt" }, h("h3", {}, "Bewertung"),
       !entwurfLeer() ? h("p", { class: "unter" }, "Erst den Entwurf übernehmen oder verwerfen.") : null,
@@ -764,10 +767,11 @@ function materialUebersicht() {
     zeichneStueckliste(); zeichneDetails(); zeigeZeile(f.beispiel);
   };
   const pos = (f) => `betrifft ${f.positionen} Position${f.positionen === 1 ? "" : "en"} in diesem Material`;
+  const festlegen = (f) => { if (f.typ === "unlesbar" || !f.merkmal) { zeige(f); return; } oeffneMerkmal(f.merkmal); };
   return h("div", { class: "details" },
     h("h2", {}, "Was ist zu tun?"),
     h("p", { class: "unter" }, "Wählen Sie im Baum eine Position, um zu sehen, warum sie diesen Status hat."),
-    d.fragen.length ? fragenListe("Offene Regelfragen in diesem Material", d.fragen, pos, zeige)
+    d.fragen.length ? fragenListe("Offene Regelfragen in diesem Material", d.fragen, pos, festlegen)
       : h("div", { class: "hinweis gut" }, "Keine offenen Regelfragen in diesem Material."),
     d.hinweise.length ? fragenListe("Nicht lesbare Bedingungen (nur in SAP lösbar)", d.hinweise, pos, zeige) : null,
     S.meta?.offen > d.fragen.length ? h("p", { class: "unter" }, `Insgesamt ${S.meta.offen} offene Regelfragen – alle im Reiter „Regeln“.`) : null,
@@ -777,6 +781,14 @@ function materialUebersicht() {
         h("li", {}, "Mit „Auswirkung auf alle Materialien“ prüfen, was der Entwurf sonst ändert."),
         h("li", {}, "„Übernehmen“ speichert die Regeln für alle."),
         h("li", {}, "Zeilen bewerten, speichern und das Material bestätigen."))));
+}
+
+async function oeffneMerkmal(merkmal) {
+  S.regelnQ = ""; S.regelnNurOffen = false; S.regelnNurMaterial = false; S.fokusMerkmal = merkmal;
+  wechsleAnsicht("regeln");
+  await ladeRegelAnsicht();
+  const k = document.querySelector(`#ansicht-regeln [data-merkmal="${CSS.escape(merkmal)}"]`);
+  if (k) k.scrollIntoView({ block: "start" });
 }
 
 function regelUebersichtRechts() {

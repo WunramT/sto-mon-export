@@ -11,20 +11,17 @@ Jupyter-Kernel `basis-bom` und lädt die Fixtures. Echte Exporte liegen außerha
 
 ```bash
 basis-bom db init --from-dir /data/exports   # maßgebliche Exporte laden (docs/EXPORTE.md), Prüfpunkte → docs/FRAGEN.md
-basis-bom run --matnr 11071032 --matnr 11071089   # check → Auflösung → regress → Export + Review-Blätter
+basis-bom ui [--port 8765]                      # Web-Oberfläche für den Fachbereich (Port weiterleiten)
+basis-bom run --matnr 11071032 --matnr 11071089   # check → Auflösung → regress → Export
 basis-bom check                                 # Konsistenz- und Exportprüfungen
 basis-bom export [--lauf N] [--matnr …]         # SAP-Format (D19)
-basis-bom review-export <matnr>…                # Review-Blatt (XLSX) pro Root-Material
-basis-bom review-import <datei.xlsx> --reviewer <name>
 basis-bom regress [--lauf N]
-basis-bom regel export                          # Regel-Arbeitsliste (XLSX) für den Fachbereich
-basis-bom regel import <datei.xlsx> --von <name> [--pruefen]
 basis-bom regel liste [MERKMAL] | regel setzen … | regel alias …
 basis-bom sql "<SELECT …>" [--csv datei]
 pytest                                          # Tests (eigene Datenbank <name>_test)
 ```
 
-Ausgabe unter `out/lauf_<id>/<matnr>/`: `<matnr>_sap_format.csv` und `review_<matnr>.xlsx`. Zur Begründung von
+Ausgabe unter `out/lauf_<id>/<matnr>/`: `<matnr>_sap_format.csv`. Zur Begründung von
 Urteilen: `notebooks/90_debug_material.ipynb` (Materialnummer eintragen, alles ausführen).
 
 ## Aufbau
@@ -35,7 +32,8 @@ Urteilen: `notebooks/90_debug_material.ipynb` (Materialnummer eintragen, alles a
 | `basis_bom/source.py` | Lesezugriff `sap_raw` mit Stichtag (D14), Ersatzmarker |
 | `basis_bom/rules.py`, `parser.py`, `ranking.py` | Regelstand, Bedingungsnamen, Entscheidung pro Ebene |
 | `basis_bom/explode.py`, `lauf.py`, `pipeline.py` | Auflösung mit Spur, Lauf speichern, Prototyp-Lauf |
-| `basis_bom/export.py`, `review.py`, `regress.py` | SAP-Format, Review-Blätter, Regression |
+| `basis_bom/export.py`, `regress.py` | SAP-Format, Regression |
+| `basis_bom/ui/` | Web-Oberfläche: `dienst.py` (Logik, Entwurf-Überlagerung), `app.py` (FastAPI), `static/` (ohne CDN) |
 | `sql/schema`, `sql/views`, `sql/checks` | DDL + Seeds, Reports, Prüfungen |
 | `notebooks/` | jupytext-Paare (`.py` editieren, `.ipynb` öffnen) |
 | `tests/fixtures`, `tests/golden` | synthetische Mini-SAP-Tabellen, erwartete Ergebnisse |
@@ -45,7 +43,11 @@ Urteilen: `notebooks/90_debug_material.ipynb` (Materialnummer eintragen, alles a
 Die Anwendung entscheidet nichts fachlich. Der Fachbereich legt fest, welche Werte Basis sind; die Regeln wachsen
 Beispiel für Beispiel (D24). Kreislauf:
 
-1. `basis-bom run --matnr …` → Export, Review-Blatt, Debug-Notebook
-2. `basis-bom regel export` → Arbeitsliste: OFFEN-Werte und unbekannte Kürzel, die im Lauf vorkamen, stehen oben
-3. Fachbereich füllt „Neuer Status“ / „Neuer Rang“ bzw. Review-Urteile aus
-4. `basis-bom regel import …` bzw. `basis-bom review-import …` → nächster Lauf
+1. `basis-bom ui` starten, Adresse an den Fachbereich geben (Name wird im Browser gemerkt).
+2. Material öffnen: Baum zeigt, welche Positionen in die Basis-Stückliste kommen und warum.
+3. Regeln als **Entwurf** ändern (Basis/Offen/Nie Basis, Rang, Kürzel) – Baum rechnet sofort neu;
+   „Auswirkung auf alle Materialien“ zeigt die Folgen. Entwurf bleibt je Name auf dem Server erhalten.
+4. **Übernehmen** mit Begründung → historisiert (D21); Konflikt, wenn jemand dieselbe Regel inzwischen geändert hat.
+5. Material bewerten (Richtig / Sollte raus / Sollte rein, fehlende Materialien ergänzen), speichern, bestätigen.
+   Bestätigte Materialien sind Referenz für `basis-bom regress`.
+6. `basis-bom run` / `export` → SAP-Format.

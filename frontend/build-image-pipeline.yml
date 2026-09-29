@@ -79,14 +79,20 @@ test:e2e:
         - basis_bom/**/*
 
 build:buildah:frontend:
+  # Default-Branch: automatisch bei Änderungen. Andere Branches: manuell startbar (▶ im Pipeline-Graph),
+  # z. B. um einen Feature-Branch per Jenkins auf test zu deployen.
   needs:
     - job: test:frontend
+      optional: true
     - job: test:e2e
       optional: true
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
       changes:
         - frontend/**/*
+    - if: '$CI_COMMIT_BRANCH && $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'
+      when: manual
+      allow_failure: true
 
 sign:cosign:frontend:
   needs:
@@ -95,3 +101,4 @@ sign:cosign:frontend:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
       changes:
         - frontend/**/*
+    - if: '$CI_COMMIT_BRANCH && $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'

@@ -66,11 +66,17 @@ test:backend:
     - changes: *backend-aenderungen
 
 build:buildah:backend:
+  # Default-Branch: automatisch bei Änderungen. Andere Branches: manuell startbar (▶ im Pipeline-Graph),
+  # z. B. um einen Feature-Branch per Jenkins auf test zu deployen.
   needs:
     - job: test:backend
+      optional: true
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
       changes: *backend-aenderungen
+    - if: '$CI_COMMIT_BRANCH && $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'
+      when: manual
+      allow_failure: true
 
 sign:cosign:backend:
   needs:
@@ -78,3 +84,4 @@ sign:cosign:backend:
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
       changes: *backend-aenderungen
+    - if: '$CI_COMMIT_BRANCH && $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'

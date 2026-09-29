@@ -437,7 +437,7 @@ class Dienst:
             drin = df[df["status"].isin(EXPORT_STATUS)]
             zeilen = sorted(f"{p}|{m}|{q}|{e}" for p, m, q, e in zip(drin["pfad"], drin["matnr"], drin["menge"], drin["meins"],
                                                                         strict=True))  # fmt: skip
-            cache[schluessel] = hashlib.sha1("\n".join(zeilen).encode(), usedforsecurity=False).hexdigest()
+            cache[schluessel] = hashlib.sha256("\n".join(zeilen).encode()).hexdigest()
         return cache[schluessel]
 
     def _bestaetigt_stand(self) -> dict[str, str | None]:

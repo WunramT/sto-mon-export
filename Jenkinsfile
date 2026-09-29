@@ -210,7 +210,7 @@ pipeline {
                         sleep 5
                         docker logs --tail 30 ${BACKEND_CONTAINER}
                         # Liveness ist sofort grün; hier zusätzlich: Datenbank erreichbar (Anmeldung!), Start nicht fehlgeschlagen
-                        docker exec ${BACKEND_CONTAINER} python -c "import json,sys,urllib.request; h=json.load(urllib.request.urlopen('http://127.0.0.1:8000/api/health?db=1')); print(h); sys.exit(1 if h.get('db') != 'ok' or h.get('daten') == 'fehler' else 0)"
+                        docker exec ${BACKEND_CONTAINER} python -c "import json,sys,urllib.request; h=json.load(urllib.request.urlopen('http://127.0.0.1:8000/api/health?db=1')); print(h); print('Hinweis: Image ohne DB-Prüfung (älter als ff981bd)') if 'db' not in h else None; sys.exit(1 if h.get('db', 'ok') != 'ok' or h.get('daten') == 'fehler' else 0)"
                     """
                 }
             }

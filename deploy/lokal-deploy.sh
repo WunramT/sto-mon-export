@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Spielt das Jenkins-Deployment lokal nach (gleiche docker-run-Aufrufe wie im Jenkinsfile), inkl. Host-nginx.
-# Aufruf: deploy/lokal-deploy.sh [backend-image] [frontend-image]   → http://localhost:8088/test/konfig-stueckliste-export/
+# Aufruf: deploy/lokal-deploy.sh [backend-image] [frontend-image]   → http://localhost:8088/app/dpn/test/konfig-stueckliste-export/
 # Exporte: ./export (oder EXPORTS=/pfad); ohne Exporte lädt das Backend Beispieldaten (DEMO_FIXTURES=T).
 # RESET=1 legt die Datenbank neu an (frische Beispieldaten).
 set -euo pipefail
@@ -12,9 +12,9 @@ NET=app_network
 PG=postgres_db_dev
 DB=konfig_stueckliste_export_test
 DEPLOY_DIR=${DEPLOY_DIR:-$HOME/deployment/${P}_${ENVIRONMENT}}
-APP_PATH=/test/$P/
-BE=${P}_backend_${ENVIRONMENT}
-FE=${P}_frontend_${ENVIRONMENT}
+APP_PATH=/app/dpn/test/$P/
+BE=konfig_stueckliste_export_backend_${ENVIRONMENT}
+FE=konfig_stueckliste_export_frontend_${ENVIRONMENT}
 
 docker network inspect $NET >/dev/null 2>&1 || docker network create $NET
 if ! docker inspect $PG >/dev/null 2>&1; then

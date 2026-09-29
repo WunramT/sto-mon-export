@@ -3,9 +3,9 @@
 Ein Host (Standard `dpn-svr-iot`), zwei Container je Umgebung, Datenbank im gemeinsamen Postgres-Container.
 
 ```
-Browser ──> Host-nginx (https://iot.polipol-service.de/test/konfig-stueckliste-export/)
-              └─> konfig-stueckliste-export_frontend_<env>  (nginx, Vue-App, /api → Backend)
-                    └─> konfig-stueckliste-export_backend_<env>  (FastAPI + basis_bom, Port 8000)
+Browser ──> Host-nginx (https://iot.polipol-service.de/app/dpn/test/konfig-stueckliste-export/)
+              └─> konfig_stueckliste_export_frontend_<env>  (nginx, Vue-App, /api → Backend)
+                    └─> konfig_stueckliste_export_backend_<env>  (FastAPI + basis_bom, Port 8000)
                           ├─> postgres_db_dev|prod  Datenbank konfig_stueckliste_export[_test]
                           ├─ /data/exports  ← $DEPLOY_DIR/base/exports  (SAP-Exporte, nur lesend)
                           └─ /data/out      ← $DEPLOY_DIR/out            (FRAGEN.md, Header-Bericht)
@@ -48,13 +48,16 @@ docker exec -it postgres_db_dev psql -U postgres -c "CREATE ROLE konfig_stueckli
 Die Datenbank legt das Jenkinsfile beim ersten Deploy an (`createdb -O <Rolle>`); die App legt darin ihre Schemas
 `sap_raw` und `basis_bom` selbst an.
 
-**Host-nginx** (wie bei MLP): Pfad unverändert an den Frontend-Container weiterreichen, z. B.
+**Host-nginx**: Pfad `/app/dpn/<env-pfad>` unverändert an den Frontend-Container weiterreichen (das Frontend
+läuft mit `VITE_BASE_PATH=/app/dpn/test/konfig-stueckliste-export/` und leitet `…/api/` selbst ans Backend).
+Der Host-nginx-Container muss im Netz `app_network` hängen und Docker-DNS (`resolver 127.0.0.11`) nutzen.
 
 ```nginx
-location /test/konfig-stueckliste-export/ {
+location = /app/dpn/test/konfig-stueckliste-export { return 301 $scheme://$host$uri/; }
+location /app/dpn/test/konfig-stueckliste-export/ {
     resolver 127.0.0.11 valid=30s;
-    set $fe konfig-stueckliste-export_frontend_test;
-    proxy_pass http://$fe:80;
+    set $upstream konfig_stueckliste_export_frontend_test;
+    proxy_pass http://$upstream:80;          # ohne URI-Teil → Pfad bleibt erhalten
     proxy_set_header Host localhost;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
@@ -62,13 +65,16 @@ location /test/konfig-stueckliste-export/ {
 }
 ```
 
+Ein eigener `…/api/`-Block direkt zum Backend (`rewrite … /api$1`, `proxy_pass http://$upstream:8000`) funktioniert
+ebenfalls, ist aber nicht nötig; dann greift allerdings die Login-Drosselung des Frontend-nginx nicht.
+
 ## Exporte laden
 
 Dateien laut `docs/EXPORTE.md` nach `$DEPLOY_DIR/base/exports/` kopieren. Dann eines von:
 
 - Oberfläche → **Datenstand** → „Exporte neu laden“ (alle Nutzer sehen währenddessen „Daten werden geladen …“),
 - Jenkins mit `RELOAD_EXPORTS=yes`,
-- `docker exec konfig-stueckliste-export_backend_test python scripts/neu_laden.py --warten`.
+- `docker exec konfig_stueckliste_export_backend_test python scripts/neu_laden.py --warten`.
 
 Beim allerersten Start mit leerer Datenbank lädt das Backend vorhandene Exporte automatisch. Regeln, Bewertungen,
 Bestätigungen und Entwürfe (Schema `basis_bom`) bleiben beim Neuladen erhalten. Prüfpunkte und Header-Bericht
@@ -79,15 +85,15 @@ landen in `$DEPLOY_DIR/out/`.
 ```bash
 docker exec -i postgres_db_dev pg_restore -U postgres -d konfig_stueckliste_export_test --clean --if-exists \
   < ~/backups/konfig_stueckliste_export_test_basis_bom_<zeitstempel>.dump
-docker restart konfig-stueckliste-export_backend_test
+docker restart konfig_stueckliste_export_backend_test
 ```
 
 ## Lokal ausprobieren
 
 - `docker compose up --build` → http://localhost:3000 (Passwort `test`, Beispieldaten).
 - `deploy/lokal-deploy.sh` spielt die Jenkins-Schritte mit denselben `docker run`-Aufrufen nach, inkl. Host-nginx →
-  http://localhost:8088/test/konfig-stueckliste-export/.
-- E2E: `cd frontend && E2E_BASE_URL=http://localhost:8088/test/konfig-stueckliste-export npx playwright test`
+  http://localhost:8088/app/dpn/test/konfig-stueckliste-export/.
+- E2E: `cd frontend && E2E_BASE_URL=http://localhost:8088/app/dpn/test/konfig-stueckliste-export npx playwright test`
   (wiederholbar; für frische Beispieldaten vorher `RESET=1 deploy/lokal-deploy.sh`).
 
 Host-nginx: Die Login-Bremse im Frontend-nginx nimmt als Client-Adresse den letzten Eintrag in `X-Forwarded-For`

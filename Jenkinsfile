@@ -12,7 +12,7 @@
 //
 // Ablauf: Prüfen → Images ziehen → Datenbank anlegen/sichern → alte Container parken → neue starten
 //         (Health) → optional Exporte neu laden → Aufräumen. Bei Fehler: alte Container wieder starten.
-// Basis: Jenkinsfile aus dap-base-lib/templates/app_backend_frontend bzw. MLP (dpn-svr-iot, BASE_PATH "").
+// Basis: Jenkinsfile aus dap-base-lib/templates/app_backend_frontend bzw. MLP (dpn-svr-iot → BASE_PATH /app/dpn).
 // =============================================================================
 pipeline {
     agent any
@@ -40,12 +40,17 @@ pipeline {
         HOST_BACKUP_DIR = '$HOME/backups'
 
         APP_NETWORK = 'app_network'
-        BACKEND_CONTAINER = "${PROJECT_NAME}_backend_${params.ENVIRONMENT}"
-        FRONTEND_CONTAINER = "${PROJECT_NAME}_frontend_${params.ENVIRONMENT}"
+        // Containernamen wie im Host-nginx (set $upstream konfig_stueckliste_export_*_<env>)
+        CONTAINER_PREFIX = 'konfig_stueckliste_export'
+        BACKEND_CONTAINER = "${CONTAINER_PREFIX}_backend_${params.ENVIRONMENT}"
+        FRONTEND_CONTAINER = "${CONTAINER_PREFIX}_frontend_${params.ENVIRONMENT}"
+        // Namen früherer Deploys (mit Bindestrich) – werden beim Parken entfernt
+        OLD_BACKEND_CONTAINER = "${PROJECT_NAME}_backend_${params.ENVIRONMENT}"
+        OLD_FRONTEND_CONTAINER = "${PROJECT_NAME}_frontend_${params.ENVIRONMENT}"
         BACKEND_PORT = '8000'
 
         DEPLOY_DIR = "\$HOME/deployment/${PROJECT_NAME}_${params.ENVIRONMENT}"
-        // URL-Pfad hinter dem Host-nginx (dpn-svr-iot: kein /app/<prefix> davor, siehe MLP)
+        // URL-Pfad hinter /app/<kürzel> (dpn-svr-iot: /app/dpn/test/konfig-stueckliste-export/)
         APP_PATH = "${params.ENVIRONMENT == 'prod' ? '/konfig-stueckliste-export/' : '/test/konfig-stueckliste-export/'}"
     }
 
@@ -89,8 +94,8 @@ pipeline {
                         REMOTE = [name: params.TARGET_SERVER, host: hostConfig.host, port: hostConfig.port,
                                   allowAnyHosts: hostConfig.allowAnyHosts, user: REMOTE_USR, password: REMOTE_PSW]
                     }
-                    // dpn-svr-iot läuft direkt unter der Domain (MLP); die Werks-Server unter /app/<kürzel>
-                    env.BASE_PATH = params.TARGET_SERVER == 'dpn-svr-iot' ? '' : "/app/${params.TARGET_SERVER.take(4).replaceAll(/-$/, '')}"
+                    // Host-nginx reicht /app/<kürzel>/… unverändert an den Frontend-Container weiter (z. B. /app/dpn)
+                    env.BASE_PATH = "/app/${params.TARGET_SERVER.take(4).replaceAll(/-$/, '')}"
                 }
             }
         }
@@ -164,6 +169,7 @@ pipeline {
                 script {
                     sshCommand remote: REMOTE, command: """
                         docker rm -f ${BACKEND_CONTAINER}-previous ${FRONTEND_CONTAINER}-previous >/dev/null 2>&1 || true
+                        docker rm -f ${OLD_FRONTEND_CONTAINER} ${OLD_BACKEND_CONTAINER} ${OLD_FRONTEND_CONTAINER}-previous ${OLD_BACKEND_CONTAINER}-previous >/dev/null 2>&1 || true
                         docker stop ${FRONTEND_CONTAINER} || true
                         docker stop ${BACKEND_CONTAINER}  || true
                         docker inspect ${BACKEND_CONTAINER}  >/dev/null 2>&1 && docker rename ${BACKEND_CONTAINER}  ${BACKEND_CONTAINER}-previous  || true
@@ -274,7 +280,7 @@ pipeline {
             script { rollback() }
         }
         success {
-            echo "✓ ${PROJECT_NAME} läuft: ${params.PUBLIC_BASE_URL}${APP_PATH}"
+            echo "✓ ${PROJECT_NAME} läuft: ${params.PUBLIC_BASE_URL}${env.BASE_PATH}${APP_PATH}"
         }
     }
 }

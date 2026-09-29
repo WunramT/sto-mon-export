@@ -315,7 +315,12 @@ class SapSource:
         return set(self._roh["CUKB"]["KNNUM"])
 
     def lookup(self, tab: str, spalte: str) -> dict[str, str]:
-        d = {"MARA": self.mara, "MARC": self.marc, "MAKT": self.makt}[tab]
-        if d is None or spalte not in d.columns:
-            return {}
-        return d.drop_duplicates("MATNR").set_index("MATNR")[spalte].to_dict()
+        """MATNR → Wert; einmal je Quelle gebaut (wird je Root-Material abgefragt, MARA hat echte Größe)."""
+        cache = self.__dict__.setdefault("_lookup_cache", {})
+        if (tab, spalte) not in cache:
+            d = {"MARA": self.mara, "MARC": self.marc, "MAKT": self.makt}[tab]
+            if d is None or spalte not in d.columns:
+                cache[tab, spalte] = {}
+            else:
+                cache[tab, spalte] = d.drop_duplicates("MATNR").set_index("MATNR")[spalte].to_dict()
+        return cache[tab, spalte]

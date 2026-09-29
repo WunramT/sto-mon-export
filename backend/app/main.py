@@ -76,6 +76,8 @@ def _start_sicher(ds: Datenstand) -> None:
         ds.beim_start()
     except Exception as exc:  # noqa: BLE001 - z. B. Datenbank nicht erreichbar: in der Oberfläche anzeigen
         log.exception("Start fehlgeschlagen")
+        from app.api.endpoints.health import db_fehlertext
+
         ds.status.zustand = "fehler"
-        ds.status.fehler = f"{type(exc).__name__}: {exc}"
+        ds.status.fehler = db_fehlertext(exc)
 

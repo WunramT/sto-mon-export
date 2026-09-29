@@ -54,6 +54,7 @@ def regeln_sichern(fixture_db, app):
 def test_anmeldung(app):
     c = TestClient(app)
     assert c.get("/api/health").json()["status"] == "ok"
+    assert c.get("/api/health?db=1").json()["db"] == "ok"
     assert c.get("/api/auth/config").json()["auth_aktiv"] is True
     assert c.get("/api/meta").status_code == 401
     assert c.post("/api/auth/login", json={"passwort": "falsch"}).status_code == 401

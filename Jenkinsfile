@@ -103,6 +103,11 @@ pipeline {
                         docker network inspect ${APP_NETWORK} >/dev/null 2>&1 || { echo "FEHLER: Docker-Netz ${APP_NETWORK} fehlt"; exit 1; }
                         docker inspect ${POSTGRES_CONTAINER} >/dev/null 2>&1 || { echo "FEHLER: Postgres-Container ${POSTGRES_CONTAINER} fehlt"; exit 1; }
                         test -f ${DEPLOY_DIR}/base/sens.env || { echo "FEHLER: ${DEPLOY_DIR}/base/sens.env fehlt (Vorlage: deploy/sens.env.example)"; exit 1; }
+                        # Pflichtwerte in sens.env (nur Vorhandensein prüfen, Werte nicht ausgeben)
+                        for V in SECRET_KEY MASTER_PASSWORD_ADMIN DATABASE_USER DATABASE_PASSWORD; do
+                            grep -Eq "^\${V}=.+" ${DEPLOY_DIR}/base/sens.env || { echo "FEHLER: \${V} fehlt oder ist leer in ${DEPLOY_DIR}/base/sens.env"; exit 1; }
+                        done
+                        if grep -Eq '^[A-Z_]+="' ${DEPLOY_DIR}/base/sens.env; then echo "WARNUNG: Anführungszeichen in sens.env werden von docker --env-file mitgelesen – bitte entfernen"; fi
                         mkdir -p ${DEPLOY_DIR}/base/exports ${DEPLOY_DIR}/out ${HOST_BACKUP_DIR}
                         echo "Exporte in ${DEPLOY_DIR}/base/exports:"
                         ls -la ${DEPLOY_DIR}/base/exports || true
@@ -198,8 +203,8 @@ pipeline {
                     sshCommand remote: REMOTE, command: """
                         sleep 5
                         docker logs --tail 30 ${BACKEND_CONTAINER}
-                        # Liveness ist sofort grün; hier zusätzlich: Datenbank erreichbar, Start nicht fehlgeschlagen
-                        docker exec ${BACKEND_CONTAINER} python -c "import json,sys,urllib.request; h=json.load(urllib.request.urlopen('http://127.0.0.1:8000/api/health')); print(h); sys.exit(1 if h.get('daten') == 'fehler' else 0)"
+                        # Liveness ist sofort grün; hier zusätzlich: Datenbank erreichbar (Anmeldung!), Start nicht fehlgeschlagen
+                        docker exec ${BACKEND_CONTAINER} python -c "import json,sys,urllib.request; h=json.load(urllib.request.urlopen('http://127.0.0.1:8000/api/health?db=1')); print(h); sys.exit(1 if h.get('db') != 'ok' or h.get('daten') == 'fehler' else 0)"
                     """
                 }
             }

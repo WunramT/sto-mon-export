@@ -67,7 +67,7 @@ class Settings(BaseSettings):
         from urllib.parse import quote_plus
 
         return (f"postgresql+psycopg://{quote_plus(self.database_user)}:{quote_plus(self.database_password)}"
-                f"@{self.database_host}:{self.database_port}/{self.database_name}")
+                f"@{self.database_host}:{self.database_port}/{self.database_name}?connect_timeout=10")
 
     @property
     def cors_origins_list(self) -> list[str]:
@@ -76,6 +76,11 @@ class Settings(BaseSettings):
     def pruefe(self) -> None:
         if self.mode == "production" and not self.master_password_admin:
             raise ValueError("MODE=production verlangt MASTER_PASSWORD_ADMIN")
+        if self.mode == "production" and not self.database_password:
+            import logging
+
+            logging.getLogger("app").error("DATABASE_PASSWORD ist leer – die Verbindung zur Datenbank "
+                                           "wird scheitern (sens.env)")
 
 
 settings = Settings()  # type: ignore[call-arg]

@@ -13,6 +13,7 @@
         <h1 class="text-h6 mb-1">Daten werden geladen …</h1>
         <p class="text-body-2 text-2 mb-5">
           <template v-if="info?.quelle === 'exporte'">Die SAP-Exporte werden eingelesen. Mit der großen STPO-Datei dauert das einige Minuten – die Seite geht danach von selbst weiter.</template>
+          <template v-else-if="info?.quelle === 'datenbank'">Nach dem Neustart werden die SAP-Daten aus der Datenbank gelesen und vorberechnet. Mit echten Daten dauert das einige Minuten – die Seite geht danach von selbst weiter.</template>
           <template v-else>Einen Moment bitte.</template>
         </p>
         <ol v-if="info?.schritte?.length" class="schritte">

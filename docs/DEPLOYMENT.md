@@ -80,6 +80,15 @@ Beim allerersten Start mit leerer Datenbank lädt das Backend vorhandene Exporte
 Bestätigungen und Entwürfe (Schema `basis_bom`) bleiben beim Neuladen erhalten. Prüfpunkte und Header-Bericht
 landen in `$DEPLOY_DIR/out/`.
 
+## Hängt / dauert lange?
+
+- `docker logs -f konfig_stueckliste_export_backend_test`: jeder Ladeschritt mit Dauer („… – fertig nach 42.0 s“),
+  am Ende „Datenstand: bereit nach … s“. Nach jedem Neustart werden die SAP-Daten aus der Datenbank gelesen und
+  vorberechnet; bis dahin zeigt die Oberfläche „Daten werden geladen …“ mit den Schritten.
+- `docker kill -s USR1 konfig_stueckliste_export_backend_test` schreibt die Stacks aller Threads ins Log
+  (wo rechnet es gerade?), ohne den Container anzuhalten.
+- `docker stats konfig_stueckliste_export_backend_test`: Speicher (STPO ~1 GB braucht entsprechend RAM).
+
 ## Wiederherstellen
 
 ```bash

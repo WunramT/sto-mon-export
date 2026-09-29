@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import faulthandler
 import logging
+import signal
 import threading
 from contextlib import asynccontextmanager
 
@@ -21,6 +23,9 @@ from basis_bom import db
 from basis_bom.dienst import Eingabefehler, Konflikt
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+# Betrieb: `docker kill -s USR1 <backend>` schreibt die Stacks aller Threads ins Log (wo hängt/rechnet es gerade?)
+if hasattr(signal, "SIGUSR1"):
+    faulthandler.register(signal.SIGUSR1, all_threads=True)
 log = logging.getLogger("app")
 
 

@@ -86,8 +86,19 @@ class Datenstand:
         db.init_schema(self.eng)
         db.init_views(self.eng)
         if db.table_exists(self.eng, "sap_raw", "mast"):
-            self._status = Status(zustand=BEREIT, quelle="datenbank", meldung="Daten aus der Datenbank")
+            # Nach jedem Neustart: SAP-Daten aus der Datenbank lesen und vorberechnen. Solange heißt es „laedt“ –
+            # sonst warten alle Anfragen (auch /datenstand) ohne Rückmeldung auf die Vorberechnung.
+            t0 = time.monotonic()
+            jetzt = datetime.now().isoformat(timespec="seconds")
+            self._status = Status(zustand=LAEDT, quelle="datenbank", gestartet=jetzt)
             self._vorwaermen()
+            self._schritt_ende()
+            self._status.zustand = BEREIT
+            self._status.schritt = None
+            self._status.meldung = "Daten aus der Datenbank"
+            self._status.beendet = datetime.now().isoformat(timespec="seconds")
+            self._status.dauer_s = round(time.monotonic() - t0, 1)
+            log.info("Datenstand: bereit nach %.1f s", self._status.dauer_s)
             return
         if self.exportdateien():
             self.starte("exporte")
@@ -115,9 +126,17 @@ class Datenstand:
 
     # ------------------------------------------------------------------------------------------------------------
     def _schritt(self, text: str) -> None:
+        self._schritt_ende()
         log.info("Datenstand: %s", text)
         self._status.schritt = text
         self._status.schritte.append(text)
+        self._schritt_t0 = time.monotonic()
+
+    def _schritt_ende(self) -> None:
+        """Dauer des vorigen Schritts ins Log (zeigt bei echten Daten, was lange dauert)."""
+        t0 = self.__dict__.pop("_schritt_t0", None)
+        if t0 is not None and self._status.schritt:
+            log.info("Datenstand: %s – fertig nach %.1f s", self._status.schritt, time.monotonic() - t0)
 
     def _lade(self, quelle: str) -> None:
         t0 = time.monotonic()
@@ -145,9 +164,9 @@ class Datenstand:
                 rules.aliasse_aus_cabn(self.eng)
             self._schritt("Auswertungen anlegen")
             db.init_views(self.eng)
-            self._schritt("Stücklisten vorberechnen")
             self.dienst.neu_laden()
             self._vorwaermen()
+            self._schritt_ende()
             self._status.zustand = BEREIT
             self._status.schritt = None
             self._status.meldung = "Exporte geladen" if quelle == "exporte" else "Beispieldaten geladen"
@@ -161,6 +180,11 @@ class Datenstand:
 
     def _vorwaermen(self) -> None:
         try:
+            self._schritt("SAP-Daten aus der Datenbank lesen")
+            _ = self.dienst.src
+            self._schritt("Stücklisten auswerten")
             self.dienst.meta()
+            self._schritt("Materialliste vorbereiten")
+            self.dienst.materialien()
         except Exception:  # pragma: no cover - leere/inkonsistente DB zeigt sich später mit Fehlermeldung
             log.exception("Vorberechnung fehlgeschlagen")

@@ -89,8 +89,17 @@
         <h3 class="abschnitt-titel">Bewertung</h3>
         <p v-if="a.bewertenGesperrt" class="unter">{{ a.bewertenGesperrt }}</p>
         <BewertungKnoepfe :p="p" class="justify-start mb-2 gross" />
+        <p v-if="a.altesUrteil(p.id)" class="unter war">Früher bewertet mit „{{ URTEIL[a.altesUrteil(p.id).urteil] }}“ – gilt nicht mehr, weil sich der Status seitdem geändert hat. Bitte neu bewerten.</p>
         <v-textarea :model-value="urteil?.kommentar || ''" :placeholder="urteil?.urteil ? 'Kommentar (optional) – z. B. warum die Zeile falsch ist' : 'Erst bewerten, dann kommentieren'" rows="2" auto-grow
           :disabled="Boolean(a.bewertenGesperrt) || !urteil?.urteil" aria-label="Kommentar" @update:model-value="(v) => a.setzeKommentar(p.id, v)" />
+        <v-alert v-if="a.klasseOhneMaterial(p)" type="warning" variant="tonal" density="compact" class="mt-2 text-body-2">
+          „Sollte rein“ braucht das Material, das für diese Klassenposition eingesetzt wird.
+        </v-alert>
+        <v-btn v-if="!p.matnr && p.postp === 'K' && a.manuell(p) === 'rein'" size="small" :color="a.klasseOhneMaterial(p) ? 'primary' : undefined"
+          :variant="a.klasseOhneMaterial(p) ? 'flat' : 'outlined'" class="mt-2" prepend-icon="mdi-plus" :disabled="Boolean(a.bewertenGesperrt)" data-test="klasse-material"
+          @click="ui.oeffne('ergaenzen', { parentId: p.id, klasseId: p.id, nurMaterial: true, hinweis: `Welches Material wird für die Klassenposition ${p.posnr} eingesetzt?` })">
+          {{ a.klasseOhneMaterial(p) ? 'Material eintragen' : 'Weiteres Material eintragen' }}
+        </v-btn>
         <v-btn v-if="p.hat_kinder" size="small" variant="outlined" class="mt-2" prepend-icon="mdi-plus" :disabled="Boolean(a.bewertenGesperrt)"
           @click="ui.oeffne('ergaenzen', { parentId: p.id })">Fehlendes Material unter dieser Baugruppe</v-btn>
       </section>
@@ -134,7 +143,7 @@ import FragenListe from '@/components/FragenListe.vue'
 import MerkmalKarte from '@/components/MerkmalKarte.vue'
 import StatusPille from '@/components/StatusPille.vue'
 import BewertungKnoepfe from '@/components/BewertungKnoepfe.vue'
-import { POSTP, fmtMenge, fmtZahl, mehrzahl } from '@/utils/texte'
+import { POSTP, URTEIL, fmtMenge, fmtZahl, mehrzahl } from '@/utils/texte'
 
 const a = useArbeit()
 const ui = useUi()
@@ -187,6 +196,7 @@ watch(() => a.fokusMerkmal, (m) => { if (m && p.value) nextTick(() => fokus(m)) 
 .unter { font-size: 12.5px; color: var(--text-2); margin: 2px 0 8px; }
 .erklaerung { font-size: 13.5px; line-height: 1.5; padding: 10px 12px; border-radius: 8px; background: #fff; border: 1px solid var(--linie); margin-bottom: 16px; }
 .abschnitt { margin-bottom: 18px; }
+.war { color: var(--s-manuell) !important; }
 .manuell-hinweis { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--linie-2); font-size: 12.5px; color: var(--text-2); display: flex; gap: 6px; align-items: flex-start; }
 .frage { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; padding: 8px 10px; border-radius: 8px; background: var(--s-manuell-bg); color: #6b4200; font-size: 13px; margin-bottom: 6px; }
 .bedingung { padding: 8px 10px; border: 1px solid var(--linie); border-radius: 8px; background: #fff; margin-bottom: 6px; }

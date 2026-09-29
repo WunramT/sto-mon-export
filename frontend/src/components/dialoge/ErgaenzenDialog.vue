@@ -29,7 +29,7 @@ import { api } from '@/api/client'
 import { useArbeit } from '@/stores/arbeit'
 import { useUi } from '@/stores/ui'
 
-const props = defineProps<{ daten: { parentId: string; hinweis?: string; klasseId?: string } }>()
+const props = defineProps<{ daten: { parentId: string; hinweis?: string; klasseId?: string; nurMaterial?: boolean } }>()
 const emit = defineEmits<{ schliessen: [] }>()
 const a = useArbeit()
 const ui = useUi()
@@ -38,6 +38,9 @@ const baugruppen = computed(() => [
   { id: d.matnr, text: `${d.matnr} ${d.kurztext} (oberste Ebene)` },
   ...d.positionen.filter((p: any) => p.hat_kinder).map((p: any) => ({ id: p.id,
     text: `${'· '.repeat(p.ebene)}${p.matnr} ${p.kurztext}${a.unterRaus(p.id, true) ? ' – nicht in der Basis' : ''}` })),
+  // Klassenpositionen mit „Sollte rein“: das eingesetzte Material gehört zur Klassenposition selbst
+  ...d.positionen.filter((p: any) => !p.matnr && p.postp === 'K' && a.manuell(p) === 'rein')
+    .map((p: any) => ({ id: p.id, text: `${'· '.repeat(p.ebene)}Klassenposition ${p.posnr} (eingesetztes Material)` })),
 ])
 const unter = ref(props.daten.parentId)
 const nr = ref('')

@@ -3,11 +3,14 @@ import { createPinia, setActivePinia } from 'pinia'
 
 vi.mock('@/api/client', () => ({
   api: vi.fn(async () => ({})),
+  apiBasis: '/api',
   herunterladen: vi.fn(),
-  ApiFehler: class extends Error {},
+  ApiFehler: class extends Error { status?: number; daten?: any },
 }))
 
+import { api } from '@/api/client'
 import { useArbeit } from '@/stores/arbeit'
+import { useAuth } from '@/stores/auth'
 import { fmtMenge, mehrzahl } from '@/utils/texte'
 
 const pos = (id: string, parent: string, status: string, extra = {}) => ({
@@ -72,5 +75,49 @@ describe('Arbeitszustand', () => {
     expect(a.bestaetigbar).toBe(true)
     a.setzeUrteil('R/A', 'gehoert_nicht_rein')
     expect(a.bestaetigbar).toBe(false)  // ungespeichert und falsch
+  })
+  it('verwirft beim Öffnen, was inzwischen gespeichert ist, und bei bestätigten Materialien alles', async () => {
+    useAuth().setzeName('Test')
+    localStorage.setItem('bb.review.R.Test', JSON.stringify({
+      lokal: { 'R/A': { urteil: 'richtig', kommentar: null }, 'R/B': { urteil: 'fehlt', kommentar: null } },
+      ergaenzt: [{ parent_pfad: 'R', matnr: '999', menge: 1 }], entfernt: [] }))
+    const antwort = (bestaetigt: any) => ({ matnr: 'R', merkmale: [], positionen: [pos('R/A', 'R', 'basis'), pos('R/B', 'R', 'ausgeschlossen')],
+      review: { stand: 't2', von: 'Kollegin', bestaetigt,
+        urteile: { 'R/A': { urteil: 'richtig', kommentar: null, status: 'basis' }, 'R/B': { urteil: 'richtig', kommentar: null, status: 'ausgeschlossen' } },
+        ergaenzt: [{ pfad: 'R/+:999', matnr: '999' }] } })
+    vi.mocked(api).mockResolvedValueOnce(antwort(null))
+    const a = useArbeit()
+    await a.ladeMaterial('R')
+    expect(Object.keys(a.lokal)).toEqual(['R/B'])          // R/A war schon gespeichert
+    expect(a.lokalErgaenzt).toEqual([])                     // Ergänzung schon auf dem Server
+    expect(a.konfliktZeilen['R/B']).toMatchObject({ von: 'Kollegin', urteil: 'richtig' })
+    setActivePinia(createPinia())
+    useAuth().setzeName('Test')
+    vi.mocked(api).mockResolvedValueOnce(antwort({ von: 'X', datum: '2026-09-28' }))
+    const b = useArbeit()
+    await b.ladeMaterial('R')
+    expect(b.reviewStand.ungespeichert).toBe(0)             // bestätigt → nichts Lokales mehr
+  })
+
+  it('Speichern gilt dem Material, auf dem es gestartet wurde', async () => {
+    useAuth().setzeName('Test')
+    const a = useArbeit()
+    const d = (m: string) => ({ matnr: m, merkmale: [], positionen: [pos(`${m}/A`, m, 'basis')], review: { urteile: {}, ergaenzt: [], stand: null } })
+    vi.mocked(api).mockResolvedValueOnce(d('R'))
+    await a.ladeMaterial('R')
+    a.setzeUrteil('R/A', 'richtig')
+    let fertig: (v: any) => void = () => {}
+    vi.mocked(api).mockImplementationOnce(() => new Promise((ok) => { fertig = ok }))  // POST /review hängt
+    const speichern = a.speichereReview()
+    vi.mocked(api).mockResolvedValueOnce(d('S'))
+    await a.ladeMaterial('S')                                // Wechsel während des Speicherns
+    a.setzeUrteil('S/A', 'richtig')
+    fertig({ urteile: 1, ergaenzt: 0 })
+    vi.mocked(api).mockResolvedValue([])
+    await speichern
+    expect(a.matnr).toBe('S')
+    expect(a.daten?.matnr).toBe('S')
+    expect(Object.keys(a.lokal)).toEqual(['S/A'])           // S bleibt ungespeichert
+    expect(JSON.parse(localStorage.getItem('bb.review.R.Test')!).lokal).toEqual({})  // R abgehakt
   })
 })

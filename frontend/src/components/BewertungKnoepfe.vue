@@ -1,6 +1,7 @@
 <template>
   <div class="bewertung" role="group" :aria-label="`Bewertung für ${p.matnr || 'Position ' + p.posnr}`">
-    <span v-if="alt" class="alt" :title="`Frühere Bewertung „${URTEIL[alt.urteil]}“ gilt nicht mehr: der Status hat sich seit dem Speichern geändert – bitte neu bewerten.`">war: {{ URTEIL[alt.urteil] }}</span>
+    <v-icon v-if="alt && imBaum" icon="mdi-history" size="16" color="warning" class="alt-icon" :aria-label="`früher: ${URTEIL[alt.urteil]}`"
+      :title="`Frühere Bewertung „${URTEIL[alt.urteil]}“ gilt nicht mehr: der Status hat sich seit dem Speichern geändert – bitte neu bewerten.`" />
     <v-icon v-if="konflikt" icon="mdi-account-alert-outline" size="16" color="warning" :title="`${konflikt.von} hat hier „${URTEIL[konflikt.urteil]}“ gespeichert`" />
     <v-tooltip v-for="k in knoepfe" :key="k.urteil" :text="sperre || k.titel">
       <template #activator="{ props }">
@@ -48,6 +49,6 @@ function setze(urteil: string) {
 .bew.rein.an { background: #2f6db3; border-color: #2f6db3; color: #fff; }
 .bew.nein.an { background: #b3261e; border-color: #b3261e; color: #fff; }
 .txt-kurz { display: none; }
-.alt { font-size: 11px; color: var(--s-manuell); align-self: center; white-space: nowrap; }
+.alt-icon { align-self: center; flex: none; }
 @media (max-width: 1440px) { .bew { width: 52px; padding: 3px 0; } .bew .txt { display: none; } .bew .txt-kurz { display: inline; } .bew.ok { width: 34px; } }
 </style>

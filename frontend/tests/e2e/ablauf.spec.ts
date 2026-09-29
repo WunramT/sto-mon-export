@@ -131,3 +131,29 @@ test('Kürzel zuordnen und übernehmen (ohne falschen Konflikt)', async ({ page 
   await expect(page.getByText('Übernommen – die Regeln gelten jetzt für alle.')).toBeVisible()
   await expect(page.getByRole('region', { name: 'Regel-Entwurf' })).toHaveCount(0)
 })
+
+test('Klassenposition: Material nachtragen, nachdem die Ergänzung entfernt wurde', async ({ page }) => {
+  await page.getByRole('button', { name: 'Offene', exact: true }).click()
+  const k = page.locator('.zeile[data-id]', { hasText: 'Klassenposition' })
+  await k.click()
+  if ((await k.locator('[data-test="bew-rein"]').getAttribute('aria-pressed')) !== 'true') {
+    await k.locator('[data-test="bew-rein"]').click()
+    await page.getByRole('dialog').getByLabel('Materialnummer').fill('10000999')
+    await page.getByRole('dialog').getByRole('button', { name: 'Ergänzen' }).click()
+  }
+  // Ergänzung entfernen → Details bieten „Material eintragen“; Abbrechen lässt „rein“ stehen
+  const erg = page.locator('.zeile.ergaenzt', { hasText: 'für Klassenposition' }).first()
+  if (await erg.count()) await erg.getByRole('button', { name: 'Entfernen' }).click()
+  await k.click()
+  const knopf = page.locator('[data-test="klasse-material"]')
+  await expect(knopf).toContainText('Material eintragen')
+  await knopf.click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Abbrechen' }).click()
+  await expect(k.locator('[data-test="bew-rein"]')).toHaveAttribute('aria-pressed', 'true')
+  await knopf.click()
+  await page.getByRole('dialog').getByLabel('Materialnummer').fill('10000998')
+  await page.getByRole('dialog').getByRole('button', { name: 'Ergänzen' }).click()
+  await expect(knopf).toContainText('Weiteres Material eintragen')
+  await page.getByRole('button', { name: 'Verwerfen', exact: true }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Verwerfen' }).click()
+})

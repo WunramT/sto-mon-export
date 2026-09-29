@@ -333,7 +333,7 @@ async function exportiere() {
 .btxt-kurz { display: none; }
 .langsam { position: absolute; top: 8px; right: 12px; z-index: 3; max-width: 420px; }
 @media (max-width: 1440px) {
-  .baum-kopf, :deep(.zeile) { grid-template-columns: minmax(160px, 1fr) 76px 150px 76px; gap: 8px; padding: 0 12px; }
+  .baum-kopf, :deep(.zeile) { grid-template-columns: minmax(160px, 1fr) 76px 150px 112px; gap: 8px; padding: 0 12px; }
   .kopf { padding: 10px 12px 8px; }
   .mat-titel { font-size: 18px; }
   /* Kennzahlen als eine kompakte Zeile, damit der Baum Platz behält */

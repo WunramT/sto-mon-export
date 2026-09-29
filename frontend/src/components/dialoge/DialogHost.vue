@@ -21,7 +21,8 @@ const a = useArbeit()
 // Klassenposition „rein“ ohne gewähltes Material (Abbrechen, Esc, daneben klicken) → „rein“ zurücknehmen
 function schliesse() {
   const d = ui.dialog
-  if (d?.art === 'ergaenzen' && d.daten?.klasseId && !d.daten.erledigt) {
+  // nurMaterial: „rein“ stand schon vorher fest (Material nachtragen) → beim Abbrechen nichts zurücknehmen
+  if (d?.art === 'ergaenzen' && d.daten?.klasseId && !d.daten.nurMaterial && !d.daten.erledigt) {
     a.setzeUrteil(d.daten.klasseId, null)
     ui.melde('„Sollte rein“ zurückgenommen – ohne Material bleibt die Klassenposition offen.')
   }

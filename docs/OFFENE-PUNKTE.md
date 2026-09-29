@@ -1,16 +1,11 @@
 # Offene Punkte (Stand nach Kritik-Runde 6, Bewertung Optik 8/10 · Funktion 8/10)
 
-## Aus der letzten Kritik (reproduziert)
+Die vier P2-Befunde der Runde 6 sind behoben (alter Browser-Stand wird beim Öffnen mit dem Server abgeglichen,
+Speichern bleibt beim Materialwechsel bei seinem Material, „Material eintragen“ für Klassenpositionen, „war: …“ als
+Symbol ohne Überlappung). Offen sind nur noch die P3-Punkte und die Betriebsthemen unten.
 
-- **P2** Alter ungespeicherter Browser-Stand wird über einen neueren gespeicherten/bestätigten Stand gelegt (gleicher
-  Name, zweiter Browser speichert/bestätigt). Folge: „ungespeichert“-Zähler und doppelt gezählte Ergänzung auf einem
-  bestätigten Material. Lösung: lokale Einträge beim Laden gegen `review.stand` abgleichen, Ergänzungen entdoppeln,
-  bei bestätigten Materialien verwerfen (mit Hinweis). (`frontend/src/stores/arbeit.ts`, `ladeMaterial`)
-- **P2** Materialwechsel während eines laufenden Speicherns vermischt zwei Materialien in der Anzeige (Server-Stand
-  stimmt). Lösung: in `speichereReview` Material und Speicherschlüssel vor dem `await` festhalten.
-- **P2** Klassenposition „rein“, deren ergänztes Material entfernt wurde: Hinweis verweist auf „Ergänzen“, dort ist die
-  Klassenposition nicht wählbar. Lösung: Knopf „Material eintragen“ in Details/Hinweis.
-- **P2** Anzeige „war: …“ überlappt die Status-Pille (1600 und 1280 px). Lösung: eigene Zeile oder Tooltip.
+## Aus der letzten Kritik (P3, reproduziert)
+
 - **P3** Nach einer Regeländerung ohne Export-Wirkung gelten passende alte Urteile nicht mehr (z. B. „Sollte raus“ →
   jetzt „Nicht in Basis“). Lösung: gleichbedeutende Urteile übernehmen.
 - **P3** `export_zeilen` wendet eine manuelle Entscheidung noch an, wenn der Status zwischen den offenen Stati wechselt

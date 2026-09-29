@@ -85,7 +85,11 @@ export const useArbeit = defineStore('arbeit', () => {
   }
   function speichereLokal() {
     speicher.schreib(schluessel('entwurf'), entwurf.value)
-    if (matnr.value) speicher.schreib(schluessel(`review.${matnr.value}`), { lokal: lokal.value, ergaenzt: lokalErgaenzt.value, entfernt: entfernt.value })
+    if (matnr.value) {
+      // Stand des Servers merken, auf dem die ungespeicherten Änderungen beruhen (Abgleich beim nächsten Öffnen)
+      const stand = daten.value?.matnr === matnr.value ? daten.value?.review?.stand ?? null : undefined
+      speicher.schreib(schluessel(`review.${matnr.value}`), { lokal: lokal.value, ergaenzt: lokalErgaenzt.value, entfernt: entfernt.value, stand })
+    }
     clearTimeout(speicherTimer)
     const name = auth.name  // beim Planen festhalten: ein Namenswechsel darf den Entwurf nicht mitnehmen
     speicherTimer = window.setTimeout(() => entwurfAnServer(false, name), 300)
@@ -300,6 +304,7 @@ export const useArbeit = defineStore('arbeit', () => {
       if (matnr.value !== m) return  // inzwischen anderes Material gewählt
       daten.value = d
       for (const x of d.merkmale) merkmale[x.merkmal] = x
+      if (neu) lokalAbgleichen(d)
       if (neu) {
         zu.value = new Set(d.positionen.filter((p: Dict) => p.hat_kinder && RAUS.has(p.status)).map((p: Dict) => p.id))
         // Arbeitskontext nach Neuladen der Seite wiederherstellen (Auswahl, Filter) – nur beim ersten Material
@@ -320,6 +325,43 @@ export const useArbeit = defineStore('arbeit', () => {
     } finally {
       if (matnr.value === m) laedt.value = false
     }
+  }
+
+  // Ungespeicherte Änderungen aus dem Browser mit dem Server-Stand abgleichen: was inzwischen gespeichert ist
+  // (hier, in einem anderen Browser oder von Kolleg:innen), fällt weg; bei bestätigten Materialien alles.
+  function lokalAbgleichen(d: Dict) {
+    const anzahl = () => Object.keys(lokal.value).length + lokalErgaenzt.value.length + entfernt.value.length
+    const vorher = anzahl()
+    if (!vorher) return
+    if (d.review?.bestaetigt) {
+      lokal.value = {}
+      lokalErgaenzt.value = []
+      entfernt.value = []
+      speichereLokal()
+      ui.melde(`${mehrzahl(vorher, 'ungespeicherte Änderung', 'ungespeicherte Änderungen')} an ${d.matnr} verworfen – das Material ist inzwischen bestätigt.`)
+      return
+    }
+    const srv: Dict = d.review?.urteile || {}
+    const status = new Map<string, string>(d.positionen.map((p: Dict) => [p.id, p.status]))
+    const l: Dict = {}
+    const kz: Dict = {}
+    for (const [id, u] of Object.entries(lokal.value) as [string, Dict | null][]) {
+      if (!status.has(id)) continue  // Position gibt es nicht mehr
+      const s = srv[id] && srv[id].status === status.get(id) ? srv[id] : null
+      if (u === null) { if (s) l[id] = null; continue }
+      if (s && s.urteil === u.urteil && (s.kommentar || null) === (u.kommentar || null)) continue  // schon gespeichert
+      l[id] = u
+      if (s && s.urteil !== u.urteil) kz[id] = { von: d.review?.von || 'Jemand', urteil: s.urteil }
+    }
+    const srvErg = new Set<string>((d.review?.ergaenzt || []).map((e: Dict) => e.pfad))
+    lokalErgaenzt.value = lokalErgaenzt.value.filter((e: Dict) => !srvErg.has(`${e.parent_pfad}/+:${e.matnr}`))
+    entfernt.value = entfernt.value.filter((p) => srvErg.has(p))
+    lokal.value = l
+    konfliktZeilen.value = kz
+    const weg = vorher - anzahl()
+    speichereLokal()
+    if (weg) ui.melde(`${mehrzahl(weg, 'ungespeicherte Änderung war', 'ungespeicherte Änderungen waren')} inzwischen gespeichert und ${weg === 1 ? 'wurde' : 'wurden'} entfernt.`
+      + (Object.keys(kz).length ? ` Bei ${mehrzahl(Object.keys(kz).length, 'Zeile weicht', 'Zeilen weichen')} Ihr ungespeichertes Urteil vom gespeicherten ab (markiert).` : ''))
   }
 
   async function oeffneMaterial(m: string) {
@@ -586,7 +628,7 @@ export const useArbeit = defineStore('arbeit', () => {
       return { text: `${mehrzahl(widersprueche.value.length, 'Position ist', 'Positionen sind')} „Sollte rein“, ihre Baugruppe aber nicht in der Basis – bitte eines von beiden ändern.`, ziel: widersprueche.value[0] }
     }
     const klasse = d.positionen.find((p: Dict) => klasseOhneMaterial(p))
-    if (klasse) return { text: `Klassenposition ${klasse.posnr}: „Sollte rein“ braucht das eingesetzte Material – bitte über „Ergänzen“ eintragen.`, ziel: klasse.id }
+    if (klasse) return { text: `Klassenposition ${klasse.posnr}: „Sollte rein“ braucht das eingesetzte Material – „Zeigen“ und dann „Material eintragen“.`, ziel: klasse.id }
     const ohne = d.positionen.filter((p: Dict) => !urteilVon(p.id))
     if (ohne.length && !rs.bewertet) return null
     if (ohne.length) return { text: `Noch ${mehrzahl(ohne.length, 'Zeile', 'Zeilen')} ohne Urteil.`, ziel: ohne[0].id }
@@ -615,10 +657,16 @@ export const useArbeit = defineStore('arbeit', () => {
       ...lokalErgaenzt.value,
     ]
     const gesendet = { lokal: { ...lokal.value }, ergaenzt: [...lokalErgaenzt.value], entfernt: [...entfernt.value] }
+    const m = d.matnr  // Speichern gilt diesem Material – auch wenn inzwischen ein anderes geöffnet wurde
+    const key = schluessel(`review.${m}`)
+    const nochHier = () => matnr.value === m
     let r: Dict
     try {
       r = await api('POST', `/review/${d.matnr}`, { von: auth.name, urteile, ergaenzt, stand: d.review?.stand ?? null })
     } catch (e) {
+      if (e instanceof ApiFehler && e.status === 409 && !nochHier()) {
+        throw new ApiFehler(`${m}: ${e.daten?.konflikte?.[0]?.von || 'Jemand'} hat inzwischen bewertet – bitte ${m} öffnen, prüfen und erneut speichern.`, 409)
+      }
       if (e instanceof ApiFehler && e.status === 409) {
         // Stand der Kollegin laden; die eigenen ungespeicherten Urteile bleiben darüber liegen
         await ladeMaterial(d.matnr, { behalteAuswahl: true })
@@ -636,19 +684,33 @@ export const useArbeit = defineStore('arbeit', () => {
       }
       throw e
     }
-    konfliktZeilen.value = {}
     // nur das Gesendete als gespeichert abhaken – was während des Speicherns dazukam, bleibt offen
-    const rest = { ...lokal.value }
-    for (const [id, u] of Object.entries(gesendet.lokal)) if (JSON.stringify(rest[id]) === JSON.stringify(u)) delete rest[id]
-    lokal.value = rest
-    lokalErgaenzt.value = lokalErgaenzt.value.filter((e) => !gesendet.ergaenzt.includes(e))
-    entfernt.value = entfernt.value.filter((x) => !gesendet.entfernt.includes(x))
-    speichereLokal()
+    const abhaken = (st: Dict) => {
+      const rest = { ...(st.lokal || {}) }
+      for (const [id, u] of Object.entries(gesendet.lokal)) if (JSON.stringify(rest[id]) === JSON.stringify(u)) delete rest[id]
+      const gleich = (a: Dict, b: Dict) => JSON.stringify(a) === JSON.stringify(b)
+      return {
+        lokal: rest,
+        ergaenzt: (st.ergaenzt || []).filter((e: Dict) => !gesendet.ergaenzt.some((g) => gleich(g, e))),
+        entfernt: (st.entfernt || []).filter((x: string) => !gesendet.entfernt.includes(x)),
+      }
+    }
+    if (nochHier()) {
+      konfliktZeilen.value = {}
+      const st = abhaken({ lokal: lokal.value, ergaenzt: lokalErgaenzt.value, entfernt: entfernt.value })
+      lokal.value = st.lokal
+      lokalErgaenzt.value = st.ergaenzt
+      entfernt.value = st.entfernt
+      speichereLokal()
+    } else {
+      // anderes Material offen: nur den gemerkten Browser-Stand des gespeicherten Materials bereinigen
+      speicher.schreib(key, { ...abhaken(speicher.lies<Dict>(key, {})), stand: undefined })
+    }
     const teile = []
     if (r.urteile) teile.push(`${mehrzahl(r.urteile, 'Zeile', 'Zeilen')} bewertet`)
     if (r.ergaenzt) teile.push(`${mehrzahl(r.ergaenzt, 'Material', 'Materialien')} als fehlend ergänzt`)
-    ui.melde(`Gespeichert: ${teile.join(', ') || 'keine Bewertungen'}.`)
-    await Promise.all([ladeMaterial(d.matnr, { behalteAuswahl: true }), ladeMaterialien()])
+    ui.melde(`${nochHier() ? '' : `${m}: `}Gespeichert: ${teile.join(', ') || 'keine Bewertungen'}.`)
+    await Promise.all([nochHier() ? ladeMaterial(m, { behalteAuswahl: true }) : Promise.resolve(), ladeMaterialien()])
   }
 
   async function bestaetige() {

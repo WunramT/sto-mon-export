@@ -1,4 +1,4 @@
-"""Fachliche Endpunkte: Materialien, Stückliste mit Regel-Entwurf, Regeln, Auswirkung, Übernehmen, Review, Export.
+"""Fachliche Endpunkte: Materialien, Stückliste mit Regel-Entwurf, Regeln, Fundstellen, Auswirkung, Übernehmen, Review, Export.
 
 Nur Durchreichen – die Logik steckt in `basis_bom.dienst` (dieselbe wie `basis-bom run`).
 """
@@ -100,6 +100,12 @@ def material(matnr: str, body: MitEntwurf, d: Dienst = Depends(dienst)):
 @router.post("/regeln")
 def regeln(body: MitEntwurf, q: str = "", nur_offen: bool = False, d: Dienst = Depends(dienst)):
     return d.regeln(q, nur_offen, Entwurf.aus(body.entwurf))
+
+
+@router.post("/fundstellen")
+def fundstellen(body: MitEntwurf, merkmal: str, wert: str, d: Dienst = Depends(dienst)):
+    """Wo ein Merkmalswert vorkommt: Beziehungswissen, Stücklisten mit Positionen, betroffene Modelle."""
+    return d.fundstellen(merkmal, wert, Entwurf.aus(body.entwurf))
 
 
 @router.post("/auswirkung")

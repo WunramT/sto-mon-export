@@ -157,3 +157,17 @@ test('Klassenposition: Material nachtragen, nachdem die Ergänzung entfernt wurd
   await page.getByRole('button', { name: 'Verwerfen', exact: true }).click()
   await page.getByRole('dialog').getByRole('button', { name: 'Verwerfen' }).click()
 })
+
+test('Fundstellen eines Werts; Werte ohne Vorkommen sind gekennzeichnet', async ({ page }) => {
+  await page.getByRole('tab', { name: /Regeln/ }).click()
+  await page.getByLabel('nur Merkmale mit offenen Fragen').uncheck()
+  const funktion = page.locator('.regel-liste [data-merkmal="FUNKTION"]')
+  await expect(funktion.locator('.wert-zeile.unbenutzt', { hasText: 'VZMO' })).toContainText('kommt in den Daten nicht vor')
+  await page.locator('.regel-liste [data-merkmal="SITZQUALI"]').getByRole('button', { name: 'Fundstellen von SITZQUALI HR anzeigen' }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toContainText('Wo kommt Sitzqualität = HR vor?')
+  await expect(dialog).toContainText('KNNUM 501')
+  await dialog.getByRole('tab', { name: /Betroffene Modelle/ }).click()
+  await dialog.getByRole('button', { name: '90000005' }).click()
+  await expect(page.locator('h1.mat-titel')).toContainText('90000005')
+})

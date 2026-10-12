@@ -2,7 +2,7 @@
 // Alle Berechnungen macht der Server (basis_bom); hier nur Zustand, Entwurf und ungespeicherte Bewertungen.
 import { defineStore } from 'pinia'
 import { computed, reactive, ref, watch } from 'vue'
-import { api, apiBasis, ApiFehler, herunterladen } from '@/api/client'
+import { api, apiBasis, ApiFehler, herunterladen, type Fundstellen } from '@/api/client'
 import { useAuth } from '@/stores/auth'
 import { useUi } from '@/stores/ui'
 import { speicher } from '@/utils/speicher'
@@ -745,6 +745,12 @@ export const useArbeit = defineStore('arbeit', () => {
     }
   }
 
+  // Wo ein Wert vorkommt – mit Entwurf, denn neu zugeordnete Kürzel bringen neue Fundstellen
+  async function ladeFundstellen(merkmal: string, wert: string): Promise<Fundstellen> {
+    const q = `merkmal=${encodeURIComponent(merkmal)}&wert=${encodeURIComponent(wert)}`
+    return api<Fundstellen>('POST', `/fundstellen?${q}`, { entwurf: entwurfPayload() })
+  }
+
   async function berechneAuswirkung() {
     auswirkungLaedt.value = true
     try { auswirkung.value = await api('POST', '/auswirkung', { entwurf: entwurfPayload() }, 300000) } catch (e) { auswirkung.value = { fehler: (e as Error).message } } finally { auswirkungLaedt.value = false }
@@ -781,7 +787,7 @@ export const useArbeit = defineStore('arbeit', () => {
     nimmZurueck, verwerfen, uebernehmen, konfliktAufloesen, ladeDatenstand, ladeMeta, ladeMaterialien, ladeMaterial,
     oeffneMaterial, start, urteilVon, sichtbar, klappe, alleAuf, alleZu, zeigePosition, reviewStand, ergaenzteZeilen,
     setzeUrteil, setzeKommentar, alleSichtbarenRichtig, ergaenze, entferneErgaenzung, bewertungVerwerfen, sperrGrund,
-    bestaetigbar, speichereReview, bestaetige, bestaetigungAufheben, exportiere, ladeRegelAnsicht, berechneAuswirkung,
+    bestaetigbar, speichereReview, bestaetige, bestaetigungAufheben, exportiere, ladeRegelAnsicht, ladeFundstellen, berechneAuswirkung,
     oeffneMerkmal, setzeMerkmalName, offeneFragen, ladeServerEntwurf, entwurfGeaendert, speichereLokal, bewertenGesperrt,
     entwurfSofortSichern, urteilPasst, manuell, klasseOhneMaterial, unterRaus, altesUrteil, konfliktZeilen, entscheide, widersprueche, kennzahlen, regelnVeraltet, pruefeRegelstand,
     aktualisiereRegeln, startKontext,

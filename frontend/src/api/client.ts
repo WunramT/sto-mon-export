@@ -82,3 +82,17 @@ export async function herunterladen(url: string, dateiname: string): Promise<voi
     throw alsFehler(e)
   }
 }
+
+// Fundstellen eines Merkmalswerts (POST /fundstellen): wo er im Beziehungswissen steht und welche Modelle das betrifft
+export interface FundPosition { posnr: string; matnr: string; kurztext: string }
+export interface FundStueckliste { stlnr: string; kopf: { matnr: string; kurztext: string; root: boolean }[]; positionen: FundPosition[] }
+export interface Fundstellen {
+  merkmal: string
+  wert: string
+  name: string
+  // je Beziehungswissen höchstens `grenze` Stücklisten; `anzahl` zählt immer alle
+  beziehungen: { knnum: string; knnam: string; anzahl: number; stuecklisten: FundStueckliste[] }[]
+  modelle: { matnr: string; kurztext: string; ausgeschlossen: boolean; stuecklisten: number }[]
+  grenze: number
+  anzahl: { beziehungen: number; stuecklisten: number; modelle: number }
+}

@@ -9,6 +9,7 @@
             @click.stop="ui.oeffne('merkmalname', { merkmal: m.merkmal })"><v-icon icon="mdi-pencil-outline" size="13" /></button>
         </div>
         <div class="art">{{ art }}</div>
+        <div v-if="ohneDaten" class="ohne-daten mt-1"><v-icon icon="mdi-database-off-outline" size="13" />Kein Wert dieses Merkmals kommt in den Daten vor</div>
       </div>
       <span v-if="gewaehlt !== undefined" class="st" :class="gewaehlt && !vorlaeufig ? 'st-basis' : 'st-manuell_prüfen'"><span class="pkt" />{{ hierText }}</span>
     </div>
@@ -18,7 +19,7 @@
     </div>
     <div class="werte">
       <div v-for="w in werte" :key="w.wert" class="wert-zeile" :class="{ 'im-entwurf': imEntwurf(w.wert), unbenutzt: unbenutzt(w) }"
-        :title="w.beispiele?.length ? `Kommt vor in: ${w.beispiele.join(', ')}` : unbenutzt(w) ? 'Kommt in keiner Stückliste vor – keine Entscheidung nötig' : undefined">
+        :title="w.beispiele?.length ? `Kommt vor in: ${w.beispiele.join(', ')}` : unbenutzt(w) ? OHNE_DATEN : undefined">
         <div class="rang mono" :class="{ kein: w.status !== 'BASIS' }">
           <template v-if="w.status === 'BASIS' && !m.sitzhoehe && !m.systemregel">{{ w.rang }}</template>
           <template v-else-if="!m.systemregel">–</template>
@@ -26,8 +27,9 @@
         <div class="wname">
           <span class="mono">{{ m.systemregel ? 'Gilt in der Basis?' : w.wert }}</span>
           <small v-if="hierWerte?.has(w.wert)" :class="{ gewaehlt: gewaehlt === w.wert }">{{ gewaehlt === w.wert ? (vorlaeufig ? '★ vorläufig gewählt' : '★ hier gewählt') : 'kommt hier vor' }}</small>
-          <small v-else-if="w.stuecklisten">in {{ mehrzahl(w.stuecklisten, 'Stückliste', 'Stücklisten') }}</small>
-          <small v-else-if="unbenutzt(w)">in keiner Stückliste</small>
+          <small v-else-if="w.stuecklisten"><button type="button" class="fund" :aria-label="`Fundstellen von ${m.merkmal} ${w.wert} anzeigen`"
+            title="Zeigt Beziehungswissen, Stücklisten und betroffene Modelle" @click.stop="ui.oeffne('fundstellen', { merkmal: m.merkmal, wert: w.wert })">in {{ mehrzahl(w.stuecklisten, 'Stückliste', 'Stücklisten') }}</button></small>
+          <small v-else-if="unbenutzt(w)" class="ohne-daten"><v-icon icon="mdi-database-off-outline" size="12" />kommt in den Daten nicht vor</small>
           <small v-else-if="w.vorkommen">kommt im Material vor</small>
         </div>
         <div class="status-wahl" role="group" :aria-label="`Status für ${m.merkmal} ${w.wert}`">
@@ -57,10 +59,15 @@ const ui = useUi()
 
 const ord: Record<string, number> = { BASIS: 0, OFFEN: 1, NICHT_BASIS: 2 }
 const basisWerte = computed(() => props.m.werte.filter((w: any) => w.status === 'BASIS').sort((x: any, y: any) => x.rang - y.rang))
-const werte = computed(() => [...props.m.werte].sort((x: any, y: any) => ord[x.status] - ord[y.status] || (x.rang ?? 0) - (y.rang ?? 0) || String(x.wert).localeCompare(String(y.wert), 'de', { numeric: true })))
 const index = (w: any) => basisWerte.value.findIndex((x: any) => x.wert === w.wert)
 const imEntwurf = (w: string) => Boolean(a.entwurf.regeln[`${props.m.merkmal}|${w}`])
+// Wert ohne Vorkommen (z. B. Startregel): bleibt entscheidbar, wird aber deutlich gekennzeichnet
 const unbenutzt = (w: any) => !props.hierWerte && w.stuecklisten === 0
+const OHNE_DATEN = 'Kommt in keiner Stückliste der geladenen SAP-Daten vor (z. B. Startregel) – die Entscheidung wirkt derzeit auf kein Material.'
+const ohneDaten = computed(() => props.m.werte.length > 0 && props.m.werte.every(unbenutzt))
+// Basiswerte nach Rang; sonst kommen vorkommende Werte vor denen ohne Vorkommen
+const werte = computed(() => [...props.m.werte].sort((x: any, y: any) => ord[x.status] - ord[y.status] || (x.rang ?? 0) - (y.rang ?? 0)
+  || (x.status !== 'BASIS' ? Number(unbenutzt(x)) - Number(unbenutzt(y)) : 0) || String(x.wert).localeCompare(String(y.wert), 'de', { numeric: true })))
 
 const art = computed(() => {
   if (props.m.systemregel) return 'Technische Regel – gilt sie in der Basis?'
@@ -91,7 +98,14 @@ const hierText = computed(() => {
 .bsp { color: #9a6a20; }
 .wert-zeile { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto 44px; align-items: center; gap: 8px; padding: 6px 12px; border-top: 1px solid var(--linie); }
 .wert-zeile.im-entwurf { background: var(--entwurf-bg); }
-.wert-zeile.unbenutzt { opacity: .5; }
+.wert-zeile.unbenutzt { background: repeating-linear-gradient(-45deg, transparent 0 7px, var(--flaeche-2) 7px 14px); }
+.wert-zeile.unbenutzt.im-entwurf { background-color: var(--entwurf-bg); }
+.wert-zeile.unbenutzt .wname > .mono { color: var(--text-3); }
+.ohne-daten { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; padding: 0 6px; border: 1px dashed var(--linie-2); border-radius: 4px;
+  font-size: 11px; font-weight: 500; color: var(--text-2); background: #fff; }
+.wname small.ohne-daten { color: var(--text-2); }
+.fund { border: 0; background: transparent; padding: 0; font: inherit; color: inherit; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
+.fund:hover { color: rgb(var(--v-theme-primary)); text-decoration-style: solid; }
 .rang { width: 22px; height: 22px; border-radius: 50%; background: var(--s-basis); color: #fff; font-size: 11.5px; font-weight: 700; display: grid; place-items: center; }
 .rang.kein { background: transparent; color: var(--text-3); }
 .wname { min-width: 0; display: flex; flex-direction: column; font-size: 13px; font-weight: 550; }

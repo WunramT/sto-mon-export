@@ -223,6 +223,7 @@ class Dienst:
         self._src: SapSource | None = None
         self._cache: dict[tuple, Aufloeser] = {}
         self._erreichbar: dict[str, set[str]] | None = None
+        self._orte: tuple[dict[str, list[tuple[str, str, str]]], dict[str, list[str]]] | None = None
 
     # ---------------------------------------------------------------------------------------------------------
     @property
@@ -234,7 +235,7 @@ class Dienst:
 
     def neu_laden(self) -> None:
         with self._lock:
-            self._src, self._cache, self._erreichbar = None, {}, None
+            self._src, self._cache, self._erreichbar, self._orte = None, {}, None, None
 
     def cache_leeren(self) -> None:
         """Aufgelöste Stücklisten neu rechnen (z. B. nach geänderten Anzeigenamen); SAP-Daten bleiben geladen."""
@@ -262,9 +263,11 @@ class Dienst:
     # ---------------------------------------------------------------------------------------------------------
     def _vk(self, a: Aufloeser) -> dict:
         """Was in allen Stücklisten vorkommt: Werte, Kürzel ohne Merkmal, nicht lesbare Bedingungen (je Anzahl
-        Stücklisten) und je Stückliste die Werte pro Merkmal."""
+        Stücklisten), je Stückliste die Werte pro Merkmal und je Wert die Beziehungswissen (KNNUM), in denen er
+        steht (Grundlage der Fundstellen)."""
         if getattr(a, "_ui_vorkommen", None) is None:
             werte: Counter = Counter()
+            knnum_zu: dict[tuple[str, str], set[str]] = {}  # (Merkmal, Wert) → KNNUM
             kuerzel: Counter = Counter()
             unlesbar: Counter = Counter()
             fehler: dict[str, str] = {}
@@ -284,6 +287,7 @@ class Dienst:
                         for m, w in e.paare:
                             for t in einzelwerte(negiert(w)[1]):
                                 w_hier.add((m, t))
+                                knnum_zu.setdefault((m, t), set()).add(knnum)
                                 b = beispiel.setdefault(f"w:{m}|{t}", [])
                                 if len(b) < 3 and bez["knnam"] not in b:
                                     b.append(bez["knnam"])
@@ -301,7 +305,7 @@ class Dienst:
                         d.setdefault(m, set()).add(w)
                     pro_stl[stlnr] = d
             a._ui_vorkommen = {"werte": werte, "kuerzel": kuerzel, "unlesbar": unlesbar, "fehler": fehler,
-                               "pro_stl": pro_stl, "beispiel": beispiel}  # fmt: skip
+                               "pro_stl": pro_stl, "beispiel": beispiel, "knnum": knnum_zu}  # fmt: skip
         return a._ui_vorkommen
 
     def _vorkommen(self, a: Aufloeser) -> tuple[Counter, Counter]:
@@ -662,6 +666,64 @@ class Dienst:
                 out[r] = stls
             self._erreichbar = out
         return self._erreichbar
+
+    def _fundorte(self) -> tuple[dict[str, list[tuple[str, str, str]]], dict[str, list[str]]]:
+        """KNNUM → [(STLNR, POSNR, IDNRK)] der Positionen, an denen das Beziehungswissen hängt (dieselben Zeilen wie
+        in `_vk`), und STLNR → Kopfmaterialien (MAST, Werk 4000). Hängt nur an den SAP-Daten, einmal gebaut."""
+        if self._orte is None:
+            s = self.src
+            orte: dict[str, list[tuple[str, str, str]]] = {}
+            for stlnr, pos in s.positionen.items():
+                posnr = pos["POSNR"] if "POSNR" in pos.columns else [""] * len(pos)
+                for p, idnrk, knobj in zip(posnr, pos["IDNRK"], pos["KNOBJ"], strict=True):
+                    if knobj in ("", "0"):
+                        continue
+                    for knnum in s.knnum_pro_knobj.get(knobj, []):
+                        orte.setdefault(knnum, []).append((stlnr, p, idnrk))
+            kopf: dict[str, list[str]] = {}
+            for matnr, stls in s.stlnr_pro_material.items():
+                for stlnr, _ in stls:
+                    if matnr not in kopf.setdefault(stlnr, []):
+                        kopf[stlnr].append(matnr)
+            self._orte = (orte, {k: sorted(v) for k, v in kopf.items()})
+        return self._orte
+
+    def fundstellen(self, merkmal: str, wert: str, entwurf: Entwurf | None = None, grenze: int = 200) -> dict:
+        """Wo ein Merkmalswert vorkommt (Einfluss eines Werts): je Beziehungswissen die Stücklisten mit Kopfmaterial
+        und den Positionen, an denen die Bedingung hängt, dazu die Root-Materialien (Modelle), die eine dieser
+        Stücklisten erreichen. Gleiche Filterung wie `_vk` – die Zahl der Stücklisten ist die der Regelübersicht.
+        Je Beziehungswissen höchstens `grenze` Stücklisten (die Zählungen sind immer vollständig)."""
+        merkmal, wert = merkmal.strip(), wert.strip()
+        if not merkmal or not wert:
+            raise Eingabefehler("Merkmal und Wert angeben")
+        a = self.aufloeser(entwurf)
+        knnums = self._vk(a)["knnum"].get((merkmal, wert), set())
+        orte, kopf = self._fundorte()
+        kt = self.kurztext()
+        roots, aus = self._roots()
+        root_set = set(roots)
+        nr = lambda x: (x.zfill(12), x)  # noqa: E731 - STLNR/POSNR numerisch sortieren
+        alle_stl: set[str] = set()
+        beziehungen = []
+        for knnum in knnums:
+            stl: dict[str, list[dict]] = {}
+            for stlnr, posnr, idnrk in orte.get(knnum, []):
+                pos = {"posnr": posnr, "matnr": idnrk, "kurztext": kt.get(idnrk, "")}
+                stl.setdefault(stlnr, []).append(pos)
+            alle_stl |= stl.keys()
+            liste = [{"stlnr": k, "kopf": [{"matnr": m, "kurztext": kt.get(m, ""), "root": m in root_set}
+                                           for m in kopf.get(k, [])], "positionen": stl[k]}
+                     for k in sorted(stl, key=nr)[:grenze]]  # fmt: skip
+            beziehungen.append({"knnum": knnum, "knnam": self.src.beziehungen[knnum]["knnam"],
+                                "anzahl": len(stl), "stuecklisten": liste})  # fmt: skip
+        beziehungen.sort(key=lambda b: (-b["anzahl"], b["knnam"], b["knnum"]))
+        erreicht = self._root_stuecklisten()
+        modelle = [{"matnr": r, "kurztext": kt.get(r, ""), "ausgeschlossen": r in aus,
+                    "stuecklisten": len(erreicht[r] & alle_stl)}
+                   for r in sorted(erreicht) if not erreicht[r].isdisjoint(alle_stl)]  # fmt: skip
+        return {"merkmal": merkmal, "wert": wert, "name": self.merkmal_namen().get(merkmal, merkmal),
+                "beziehungen": beziehungen, "modelle": modelle, "grenze": grenze,
+                "anzahl": {"beziehungen": len(beziehungen), "stuecklisten": len(alle_stl), "modelle": len(modelle)}}  # fmt: skip
 
     def auswirkung(self, entwurf: Entwurf) -> dict:
         """Wirkung des Entwurfs auf alle Root-Materialien (nur die, deren Stücklisten betroffene Merkmale enthalten)."""

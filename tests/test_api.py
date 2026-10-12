@@ -391,3 +391,47 @@ def test_entwurf_serverseitig_und_materialinfo(client):
         "bekannt": True,
     }
     assert client.get("/api/materialinfo/77777777").json()["bekannt"] is False
+
+
+def test_fundstellen_eines_werts(client):
+    f = client.post("/api/fundstellen?merkmal=SITZQUALI&wert=HR", json={"entwurf": None}).json()
+    assert f["anzahl"] == {"beziehungen": 4, "stuecklisten": 3, "modelle": 2}
+    assert [b["knnam"] for b in f["beziehungen"]][:2] == ["SQ=HR", "FUNK=X_SIQUALI=HR_ELEKTRO=X"]  # meiste zuerst
+    sq = f["beziehungen"][0]
+    assert sq["knnum"] == "501" and sq["anzahl"] == 3
+    s1000 = next(s for s in sq["stuecklisten"] if s["stlnr"] == "1000")
+    assert s1000["kopf"] == [{"matnr": "90000001", "kurztext": "Sessel STO Basis", "root": True}]
+    assert [(p["posnr"], p["matnr"]) for p in s1000["positionen"]] == [("0020", "10000002"), ("0100", "10000010")]
+    s1002 = next(s for s in sq["stuecklisten"] if s["stlnr"] == "1002")
+    assert s1002["kopf"][0]["matnr"] == "10000006" and s1002["kopf"][0]["root"] is False  # Baugruppe
+    assert [(m["matnr"], m["stuecklisten"]) for m in f["modelle"]] == [("90000001", 2), ("90000005", 1)]
+    # Multi-Wert „SQ=HR/XX“ zählt für beide Werte
+    xx = client.post("/api/fundstellen?merkmal=SITZQUALI&wert=XX", json={"entwurf": None}).json()
+    assert [b["knnam"] for b in xx["beziehungen"]] == ["SQ=HR/XX"]
+
+
+def test_fundstellen_zaehlen_wie_die_regeluebersicht(client):
+    d = client.post("/api/regeln", json={"entwurf": None}).json()
+    for m in d["merkmale"]:
+        for w in m["werte"]:
+            f = client.post("/api/fundstellen", params={"merkmal": m["merkmal"], "wert": w["wert"]},
+                            json={"entwurf": None}).json()  # fmt: skip
+            assert f["anzahl"]["stuecklisten"] == w["stuecklisten"], (m["merkmal"], w["wert"])
+    # Startregel ohne Vorkommen: in der Übersicht mit 0 Stücklisten, ohne Fundstellen
+    funk = next(m for m in d["merkmale"] if m["merkmal"] == "FUNKTION")
+    assert next(w for w in funk["werte"] if w["wert"] == "VZMO")["stuecklisten"] == 0
+    leer = client.post("/api/fundstellen?merkmal=FUNKTION&wert=VZMO", json={"entwurf": None}).json()
+    assert leer["anzahl"] == {"beziehungen": 0, "stuecklisten": 0, "modelle": 0} and leer["beziehungen"] == []
+    assert client.post("/api/fundstellen?merkmal=&wert=X", json={"entwurf": None}).status_code == 400
+
+
+def test_fundstellen_mit_kuerzel_im_entwurf(client):
+    e = {"aliasse": [{"alias": "ZZ", "merkmal": "SITZTIEFE", "status": "BASIS",
+                      "vorher": {"merkmal": None, "status": "OFFEN"}}]}  # fmt: skip
+    ohne = client.post("/api/fundstellen?merkmal=SITZTIEFE&wert=1", json={"entwurf": None}).json()
+    assert ohne["anzahl"]["stuecklisten"] == 0
+    mit = client.post("/api/fundstellen?merkmal=SITZTIEFE&wert=1", json={"entwurf": e}).json()
+    assert mit["beziehungen"][0]["knnam"] == "ZZ=1"
+    pos = mit["beziehungen"][0]["stuecklisten"][0]["positionen"]
+    assert [(p["posnr"], p["matnr"]) for p in pos] == [("0060", "10000006")]
+    assert [m["matnr"] for m in mit["modelle"]] == ["90000001"]

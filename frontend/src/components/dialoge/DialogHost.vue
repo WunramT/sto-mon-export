@@ -15,6 +15,7 @@ import UebernehmenDialog from './UebernehmenDialog.vue'
 import HilfeDialog from './HilfeDialog.vue'
 import MerkmalNameDialog from './MerkmalNameDialog.vue'
 import DatenstandDialog from './DatenstandDialog.vue'
+import FundstellenDialog from './FundstellenDialog.vue'
 
 const ui = useUi()
 const a = useArbeit()
@@ -30,9 +31,9 @@ function schliesse() {
 }
 const KOMPONENTEN: Record<string, any> = {
   name: NameDialog, kuerzel: KuerzelDialog, ergaenzen: ErgaenzenDialog, uebernehmen: UebernehmenDialog,
-  hilfe: HilfeDialog, merkmalname: MerkmalNameDialog, datenstand: DatenstandDialog,
+  hilfe: HilfeDialog, merkmalname: MerkmalNameDialog, datenstand: DatenstandDialog, fundstellen: FundstellenDialog,
 }
-const BREITE: Record<string, number> = { hilfe: 680, datenstand: 720, uebernehmen: 600, kuerzel: 520, ergaenzen: 560 }
+const BREITE: Record<string, number> = { hilfe: 680, datenstand: 720, fundstellen: 860, uebernehmen: 600, kuerzel: 520, ergaenzen: 560 }
 const komponente = computed(() => (ui.dialog ? KOMPONENTEN[ui.dialog.art] : null))
 const breite = computed(() => (ui.dialog ? BREITE[ui.dialog.art] || 480 : 480))
 </script>

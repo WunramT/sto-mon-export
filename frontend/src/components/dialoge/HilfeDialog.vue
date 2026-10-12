@@ -9,7 +9,7 @@
           <StatusPille :status="st" /><span>{{ STATUS[st].hilfe }}</span>
         </template>
       </div>
-      <p class="text-2 mb-4">Regelwerte: „Basis“ = gehört zur Basis (Rang 1 gewinnt), „Nie Basis“ = nie, „Offen“ = noch keine Entscheidung. Werte, die in keiner Stückliste vorkommen, sind ausgegraut und brauchen keine Entscheidung.</p>
+      <p class="text-2 mb-4">Regelwerte: „Basis“ = gehört zur Basis (Rang 1 gewinnt), „Nie Basis“ = nie, „Offen“ = noch keine Entscheidung. Ein Klick auf „in n Stücklisten“ zeigt, wo ein Wert vorkommt (Beziehungswissen, Stücklisten, betroffene Modelle). Werte, die in keiner Stückliste vorkommen (z. B. Startregeln), sind als „kommt in den Daten nicht vor“ gekennzeichnet – ihre Entscheidung wirkt derzeit auf kein Material.</p>
       <h3 class="abschnitt-titel">Ablauf</h3>
       <ol class="ablauf mb-4">
         <li>Material wählen, offene Fragen rechts klären – jede Regeländerung ist zunächst ein <strong>Entwurf</strong> nur für Sie.</li>

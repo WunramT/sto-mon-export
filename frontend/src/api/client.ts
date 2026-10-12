@@ -91,7 +91,8 @@ export interface Fundstellen {
   wert: string
   name: string
   // je Beziehungswissen höchstens `grenze` Stücklisten; `anzahl` zählt immer alle
-  beziehungen: { knnum: string; knnam: string; anzahl: number; stuecklisten: FundStueckliste[] }[]
+  // text = Quelltext (CUKN) oder null; quelle: woraus Merkmale und Werte gelesen wurden (Text oder Rückfall Name)
+  beziehungen: { knnum: string; knnam: string; text: string | null; quelle: 'text' | 'name'; anzahl: number; stuecklisten: FundStueckliste[] }[]
   modelle: { matnr: string; kurztext: string; ausgeschlossen: boolean; stuecklisten: number }[]
   grenze: number
   anzahl: { beziehungen: number; stuecklisten: number; modelle: number }

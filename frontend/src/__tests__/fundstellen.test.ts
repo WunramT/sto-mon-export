@@ -13,6 +13,7 @@ import { api } from '@/api/client'
 import { useArbeit } from '@/stores/arbeit'
 import { useUi } from '@/stores/ui'
 import MerkmalKarte from '@/components/MerkmalKarte.vue'
+import QuelltextAnzeige from '@/components/QuelltextAnzeige.vue'
 
 const karte = (werte: any[]) => mount(MerkmalKarte, {
   props: { m: { merkmal: 'FUNKTION', name: 'Funktion', systemregel: false, sitzhoehe: false, werte } },
@@ -52,5 +53,18 @@ describe('Fundstellen eines Werts', () => {
     const w = karte([{ wert: 'X', status: 'BASIS', rang: 1, stuecklisten: 0 }])
     expect(w.find('.kopf .ohne-daten').text()).toContain('Kein Wert dieses Merkmals kommt in den Daten vor')
     expect(w.find('button.fund').exists()).toBe(false)
+  })
+})
+
+describe('Quelltext einer Bedingung', () => {
+  it('zeigt den Quelltext (CUKN) oder den Hinweis auf den Rückfall', () => {
+    const mit = mount(QuelltextAnzeige, { props: { text: "$parent.W_FUNKTION = 'X'." } })
+    expect(mit.find('pre.quelltext').text()).toBe("$parent.W_FUNKTION = 'X'.")
+    expect(mit.find('.rueckfall').exists()).toBe(false)
+    const ohne = mount(QuelltextAnzeige, { props: { text: null } })
+    expect(ohne.find('pre').exists()).toBe(false)
+    expect(ohne.find('.rueckfall').text()).toBe('kein Quelltext in CUKN – aus dem Namen gelesen')
+    // Prozeduren werden nicht gelesen – kein Rückfall-Hinweis
+    expect(mount(QuelltextAnzeige, { props: { text: null, prozedur: true } }).find('.rueckfall').exists()).toBe(false)
   })
 })

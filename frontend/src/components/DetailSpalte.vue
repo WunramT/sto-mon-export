@@ -109,6 +109,7 @@
         <template v-if="p.bedingungen.length">
           <div v-for="(b, i) in p.bedingungen" :key="i" class="bedingung">
             <div class="roh mono">{{ b.name }}<span v-if="b.rolle === 'prozedur_ignoriert'" class="text-3"> · Prozedur, wird ignoriert</span></div>
+            <QuelltextAnzeige :text="b.text" :prozedur="b.rolle === 'prozedur_ignoriert'" />
             <div v-for="(x, j) in b.pruefungen" :key="j" class="pruefung">
               <span class="ergebnis" :class="`e-${x.ergebnis}`">{{ x.ergebnis === 'passt' ? 'passt' : x.ergebnis === 'passt_nicht' ? 'passt nicht' : 'offen' }}</span>
               <span>{{ pruefText(x) }}</span>
@@ -142,6 +143,7 @@ import { useUi } from '@/stores/ui'
 import FragenListe from '@/components/FragenListe.vue'
 import MerkmalKarte from '@/components/MerkmalKarte.vue'
 import StatusPille from '@/components/StatusPille.vue'
+import QuelltextAnzeige from '@/components/QuelltextAnzeige.vue'
 import BewertungKnoepfe from '@/components/BewertungKnoepfe.vue'
 import { POSTP, URTEIL, fmtMenge, fmtZahl, mehrzahl } from '@/utils/texte'
 

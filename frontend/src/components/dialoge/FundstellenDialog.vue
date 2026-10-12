@@ -32,6 +32,7 @@
                     <span class="text-3 klein mono">KNNUM {{ b.knnum }}</span>
                     <v-spacer />
                     <span class="text-2 klein">{{ mehrzahl(b.anzahl, 'Stückliste', 'Stücklisten') }}</span>
+                    <QuelltextAnzeige class="bw-text" :text="b.text" />
                   </div>
                 </v-expansion-panel-title>
                 <v-expansion-panel-text>
@@ -96,6 +97,7 @@ import { computed, onMounted, ref } from 'vue'
 import type { Fundstellen } from '@/api/client'
 import { useArbeit } from '@/stores/arbeit'
 import { mehrzahl } from '@/utils/texte'
+import QuelltextAnzeige from '@/components/QuelltextAnzeige.vue'
 
 const props = defineProps<{ daten: { merkmal: string; wert: string } }>()
 const emit = defineEmits<{ schliessen: [] }>()
@@ -141,7 +143,8 @@ function oeffne(matnr: string) {
 .zahlen > div { border: 1px solid var(--linie); border-radius: 8px; padding: 8px 12px; display: flex; flex-direction: column; }
 .zahlen strong { font-size: 20px; font-weight: 650; line-height: 1.2; }
 .zahlen span { font-size: 12px; color: var(--text-2); }
-.bw-kopf { display: flex; align-items: baseline; gap: 10px; width: 100%; padding-right: 8px; min-width: 0; }
+.bw-kopf { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; width: 100%; padding-right: 8px; min-width: 0; }
+.bw-text { flex-basis: 100%; min-width: 0; }
 .knnam { font-size: 13px; word-break: break-all; }
 .tabelle { font-size: 12.5px; border: 1px solid var(--linie); border-radius: 8px; }
 .tabelle td { vertical-align: top; padding-top: 4px !important; padding-bottom: 4px !important; }

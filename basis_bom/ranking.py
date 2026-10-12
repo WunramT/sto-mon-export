@@ -1,7 +1,7 @@
 """Entscheidung pro Ebene (D1–D5, D7, D8).
 
 Eingabe: alle (Merkmal, Wert)-Paare aus den Auswahlbedingungen einer Stückliste und der Regelstand.
-Pro Merkmal gewinnt der vorkommende `BASIS`-Wert mit bestem Rang (D2), bei `SITZHOEHE` der niedrigste
+Pro Merkmal gewinnt der vorkommende `BASIS`-Wert mit bestem Rang (D2), bei der Sitzhöhe der niedrigste
 vorkommende Zahlenwert (D3). Ohne Rangwert: Marker `kein_rang_fuer:<M>` (D4). Kein Blick nach oben/unten.
 """
 
@@ -11,7 +11,7 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 
-from .rules import BASIS, NICHT_BASIS, OFFEN, SITZHOEHE, SYSTEMWERT, Regelstand
+from .rules import BASIS, NICHT_BASIS, OFFEN, SYSTEMWERT, Regelstand, ist_sitzhoehe
 
 MULTI_TRENNER = re.compile(r"[/+]")
 
@@ -66,7 +66,7 @@ def waehle(paare: Iterable[tuple[str, str]], regeln: Regelstand) -> Ebenenwahl:
             r = regeln.regel(m, w)
             kand.append({"wert": w, "status": r.status if r else None, "rang": r.rang if r else None})
         wahl.kandidaten[m] = kand
-        if m == SITZHOEHE:
+        if ist_sitzhoehe(m):
             zahlen = [(_zahl(k["wert"]), k["wert"]) for k in kand if _zahl(k["wert"]) is not None
                       and k["status"] != NICHT_BASIS]  # fmt: skip
             if zahlen:
@@ -87,9 +87,15 @@ def waehle(paare: Iterable[tuple[str, str]], regeln: Regelstand) -> Ebenenwahl:
 
 
 def _unbekannt(m: str, w: str, regeln: Regelstand) -> bool:
-    if m == SITZHOEHE:
+    if ist_sitzhoehe(m):
         return _zahl(w) is None
     return regeln.status(m, w) in (None, OFFEN)
+
+
+def _treffer(merkmal: str, teile: list[str], g: str) -> bool:
+    if ist_sitzhoehe(merkmal):
+        return any(_zahl(t) is not None and _zahl(t) == _zahl(g) for t in teile)
+    return g in teile
 
 
 def pruefe_paar(merkmal: str, wert: str, wahl: Ebenenwahl, regeln: Regelstand) -> Pruefung:
@@ -97,9 +103,12 @@ def pruefe_paar(merkmal: str, wert: str, wahl: Ebenenwahl, regeln: Regelstand) -
     ist_negiert, wert = negiert(wert)
     if ist_negiert:  # „Merkmal ≠ Wert“ (Q47): Ergebnis der positiven Prüfung umkehren, MANUELL bleibt
         p = pruefe_paar(merkmal, wert, wahl, regeln)
+        g = wahl.gewaehlt.get(merkmal)
+        if p.ergebnis == MANUELL and g is not None and _treffer(merkmal, einzelwerte(wert), g):
+            # „≠a/b“ mit gewähltem a: unbekannte Teilwerte ändern nichts – die Bedingung passt sicher nicht
+            return Pruefung(PASST_NICHT, f"{merkmal}≠{wert}, gewählt ist {g}")
         if p.ergebnis == MANUELL:
             return p
-        g = wahl.gewaehlt.get(merkmal)
         if p.ergebnis == PASST:
             return Pruefung(PASST_NICHT, f"{merkmal}≠{wert}, gewählt ist {g}")
         return Pruefung(PASST, f"{merkmal}≠{wert} (gewählt {g})")
@@ -109,11 +118,7 @@ def pruefe_paar(merkmal: str, wert: str, wahl: Ebenenwahl, regeln: Regelstand) -
     if g is None:
         return Pruefung(PASST_NICHT, f"Systemregel {merkmal} ist NICHT_BASIS")
     teile = einzelwerte(wert)
-    if merkmal == SITZHOEHE:
-        treffer = any(_zahl(t) is not None and _zahl(t) == _zahl(g) for t in teile)
-    else:
-        treffer = g in teile
-    if treffer:
+    if _treffer(merkmal, teile, g):
         unbekannt = [t for t in teile if t != g and _unbekannt(merkmal, t, regeln)]
         if unbekannt:
             return Pruefung(MANUELL, f"unbekannter_teilwert:{merkmal}={'/'.join(unbekannt)} in {wert}")

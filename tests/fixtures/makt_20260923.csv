@@ -25,3 +25,14 @@ MATNR,SPRAS,MAKTX
 10000202,D,Rückenbezug HR
 10000203,D,Rückenbezug BS
 10000301,D,Unterbau FK
+90000007,D,Relaxsessel SAP-Quelltext
+10000701,D,Rückenbeschlag Funktion
+10000702,D,Rückenbeschlag STLR
+10000703,D,Motor VZMO
+10000704,D,Klips CNC
+10000705,D,Schaumteil T25
+10000706,D,Gasfeder 45
+10000707,D,Funktionsteil X
+10000708,D,Motor Vollmotor
+10000709,D,Zuschnitt Platte
+10000710,D,Armteil links 0

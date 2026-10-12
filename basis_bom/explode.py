@@ -3,7 +3,8 @@
 Ablauf pro Root-Material:
 1. Root-Menge = root_material − root_ausschluss (D22); Stammdatenprüfung und D15 → sonst übersprungen.
 2. BFS mit Pfad: ein Material unter zwei Eltern erzeugt zwei Zeilen (D16), pro Pfad nur einmal aufgelöst.
-3. Pro Stückliste: Auswahlbedingungen aller Positionen parsen → Ranking (D2) → jede Position prüft alle
+3. Pro Stückliste: Auswahlbedingungen aller Positionen lesen (Quelltext CUKN, sonst Name; `bedingung.lies`)
+   → Ranking (D2) → jede Position prüft alle
    Auswahlbedingungen mit UND (D9); Prozeduren werden gezählt, nicht bewertet (D10).
 4. Status nach D11–D13, Vererbung nach D12; `menge_kum` nach D17; Spur nach D18.
 """
@@ -17,10 +18,11 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
+from . import bedingung
 from . import source as sapsource
-from .parser import Parser
+from .parser import ParseErgebnis, Parser
 from .ranking import MANUELL, PASST_NICHT, Ebenenwahl, einzelwerte, pruefe_paar, waehle
-from .rules import SITZHOEHE, Regelstand
+from .rules import Regelstand, ist_sitzhoehe
 
 log = logging.getLogger(__name__)
 
@@ -107,16 +109,20 @@ class Aufloeser:
         self.ohne_stammdaten: set[str] = set()
 
     # -----------------------------------------------------------------------------------------------------
+    def lies(self, bez: dict) -> ParseErgebnis:
+        """Eine Auswahlbedingung lesen – die eine Stelle für die Wahl Quelltext (CUKN) / Name (Rückfall)."""
+        return bedingung.lies(self.parser, bez)
+
     def _beobachtet(self, regeln: Regelstand) -> tuple[set[tuple[str, str]], set[str]]:
         paare, aliasse = set(), set()
         for bez in self.src.beziehungen.values():
             if not self.knart_fehlt and bez["knart"] not in sapsource.KNART_AUSWAHL:
                 continue  # nur Auswahlbedingungen liefern Merkmalswerte (D10)
-            e = self.parser.parse(bez["knnam"])
+            e = self.lies(bez)
             aliasse.update(e.unbekannte_aliasse)
             for m, w in e.paare:
                 for t in einzelwerte(w):
-                    if m == SITZHOEHE or regeln.regel(m, t) is not None:
+                    if ist_sitzhoehe(m) or regeln.regel(m, t) is not None:
                         continue
                     paare.add((m, t))
         return paare, aliasse
@@ -185,7 +191,7 @@ class Aufloeser:
             else:
                 rolle = SONSTIGE
             out.append({"knnum": knnum, "knnam": bez["knnam"], "knart": knart, "adzhl": bez["adzhl"],
-                        "rolle": rolle})  # fmt: skip
+                        "text": bez.get("text"), "quelle": bedingung.quelle(bez), "rolle": rolle})  # fmt: skip
         return out, None
 
     def _ebene(self, stlnr: str, stlal: str) -> _Ebene:
@@ -199,7 +205,7 @@ class Aufloeser:
             bez, fehler = self._beziehungen(p.get("KNOBJ", ""))
             for b in bez:
                 if b["rolle"] == AUSWAHL:
-                    b["parse"] = self.parser.parse(b["knnam"])
+                    b["parse"] = self.lies(b)
                     paare += b["parse"].paare
             roh.append((p, bez, fehler))
         wahl = waehle(paare, self.regeln)  # D2: nur diese Stückliste
@@ -226,7 +232,7 @@ class Aufloeser:
         nicht, manuell, passt = [], [], []
         relevant: set[str] = set()
         for b in bez:
-            eintrag = {k: b[k] for k in ("knnum", "knnam", "knart", "adzhl", "rolle")}
+            eintrag = {k: b[k] for k in ("knnum", "knnam", "knart", "adzhl", "text", "quelle", "rolle")}
             if b["rolle"] == PROZEDUR:
                 spur["prozeduren"].append(b["knnam"])
             elif b["rolle"] == SONSTIGE:

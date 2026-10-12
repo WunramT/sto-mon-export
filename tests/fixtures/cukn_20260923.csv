@@ -1,0 +1,26 @@
+Interne Nummer des Wissensbausteins;int. Zähler;Blockzähler Wissensbaustein;Löschkennzeichen;Änderungsnummer;Gültig ab;Gültig bis;BIN2-Datenelement fuer SYST;Datenblock für Wissensablage
+0000000501;1;0;;;;9999-12-31;78;000001$PARENT.SITZQUALI = 'FK'.                                               
+0000000501;2;0;;AE4;20250101;9999-12-31;78;000001$PARENT.SITZQUALI = 'HR'.                                               
+0000000501;3;0;;AE5;20260101;9999-12-31;78;000001$PARENT.SITZQUALI = 'XX'.                                               
+0000000501;4;0;;AE6;20270101;9999-12-31;78;000001$PARENT.SITZQUALI = 'BS'.                                               
+0000000502;0;0;;;;9999-12-31;78;000001$parent.SITZQUALI = 'FK'.                                               
+0000000503;0;0;;;;9999-12-31;78;000001$parent.FUNKTION in ('MANUEL').                                         
+0000000506;0;0;;;;9999-12-31;150;000002* Sitzqualität HR (Kommentar)                                           $PARENT.SITZQUALI = 'HR'                                                
+0000000507;0;0;;;;9999-12-31;294;000004function Z_PREISFINDUNG                                                 (                                                                       INDEKS = $parent.INDEKS                                                 ).                                                                      
+0000000508;0;0;;;;9999-12-31;78;000001$PARENT.FUNKTION = 'MANUEL'.                                            
+0000000512;0;0;;;;9999-12-31;78;000001$parent.SITZQUALI in ('HR','XX').                                       
+0000000520;0;0;;;;9999-12-31;78;000001$parent.FUNKTION EQ 'MANUEL'.                                           
+0000000521;0;0;;;;9999-12-31;78;000001$PARENT.SITZQUALI = 'FK'                                                
+0000000531;1;0;X;;;9999-12-31;78;000001$PARENT.SITZQUALI = 'BS'.                                               
+0000000540;0;0;;;;9999-12-31;222;000003$parent.W_RUECKENVERST ='X'                                             and                                                                     $parent.W_FUNKTION = 'X'.                                               
+0000000541;0;0;;;;9999-12-31;222;000003$parent.W_RUECKENVERST = 'STLR'                                         and                                                                     $parent.W_SITZHOEHE = '47'.                                             
+0000000542;0;0;;;;9999-12-31;222;000003$PARENT.W_FUNKTION = 'VZMO'                                             AND                                                                     $PARENT.W_SITZHOEHE = '45'.                                             
+0000000543;0;0;;;;9999-12-31;150;000002$PARENT.PP_KLIPS_CNC specified or                                       $PARENT.PP_KLIPS_MENGE > 0.                                             
+0000000544;0;0;;;;9999-12-31;222;000003$PARENT.SCH_ART = 'T25'                                                 or                                                                      $PARENT.SCH_ART = 'PU2528'.                                             
+0000000545;0;0;;;;9999-12-31;438;000006function Z_SCHAUM_GET_WASTE                                             (                                                                       INDEKS   = $parent.INDEKS,                                              O_VBAP_WERKS = $parent.O_MARC_WERKS,                                    O_STPO_MENGE = $self.G_STPO_ROME                                        ).                                                                      
+0000000546;0;0;;;;9999-12-31;222;000003$PARENT.W_FUNKTION IN ('X')                                             AND                                                                     $PARENT.W_SITZHOEHE = '45'                                              
+0000000548;0;0;;;;9999-12-31;150;000002* Funktion Vollmotor                                                    $parent.W_FUNKTION in ('VZMO').                                         
+0000000549;0;0;;;;9999-12-31;366;000005* in die Funktion geht's rein: Indeks und Werte                         * raus kommt die Menge                                                  $self.INDEKS2 = $parent.INDEKS,                                         TABLE PP4000_P_ROZKROJ ( INDEKS = $self.INDEKS2 , W01 = $SELF.W01 ),    $self.MENGE = $self.W01 * 2.                                            
+0000000550;0;0;;;;9999-12-31;78;000001$PARENT W_ARM_L in ('0')                                                
+0000000504;0;0;;;;9999-12-31;118;000003$PARENT.FUNKTION = 'X'                                                  AND $PARENT.SITZQUALI = 'HR'            
+0000000504;0;1;;;;9999-12-31;104;                                and $parent.ELEKTRO = 'X'.                                              

@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.19.5
+#       jupytext_version: 1.19.6
 #   kernelspec:
 #     display_name: basis-bom
 #     language: python
@@ -17,12 +17,12 @@
 # # 20 – Ranking pro Ebene
 #
 # Für jede Stückliste (STLNR) unabhängig: pro Merkmal gewinnt der vorkommende BASIS-Wert mit bestem Rang (D2),
-# `SITZHOEHE` numerisch (D3), ohne Rangwert Marker `kein_rang_fuer:<M>` (D4).
+# Sitzhöhe (`rules.SITZHOEHE_MERKMALE`) numerisch (D3), ohne Rangwert Marker `kein_rang_fuer:<M>` (D4).
 
 # %%
 import pandas as pd
 
-from basis_bom import db, rules
+from basis_bom import bedingung, db, rules
 from basis_bom.parser import Parser
 from basis_bom.ranking import waehle
 from basis_bom.source import SapSource
@@ -49,7 +49,7 @@ for stlnr, pos in src.positionen.items():
         for knnum in src.knnum_pro_knobj.get(knobj, []):
             bez = src.beziehungen.get(knnum)
             if bez:
-                paare += parser.parse(bez["knnam"]).paare
+                paare += bedingung.lies(parser, bez).paare  # Quelltext (CUKN), sonst Name
     wahl = waehle(paare, rs)
     zeilen.append({"stlnr": stlnr, "gewaehlt": wahl.gewaehlt, "marker": wahl.marker})
 pd.DataFrame(zeilen)

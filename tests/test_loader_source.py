@@ -132,6 +132,10 @@ def test_legacy_material_list():
 def test_pruefpunkte(erg, tmp_path):
     text = pruefpunkte.berichte(erg)
     assert "1. **CUKB-Spalten**" in text and "8. **Excel-Grenze" in text
+    assert "11. **CUKN (Quelltext Beziehungswissen):** 25 Zeilen roh, 25 geladen (21 Bausteine). " \
+           "Auswahlbedingungen in CUKB: 25, davon mit Quelltext 17, ohne 8" in text  # fmt: skip
+    ohne = loader.Ladeergebnis(tabellen={k: v for k, v in erg.tabellen.items() if k != "CUKN"})
+    assert "nicht geladen" in pruefpunkte.quelltext_abdeckung(ohne)
     ziel = tmp_path / "FRAGEN.md"
     ziel.write_text("# Fragen\n\nVorher.\n", encoding="utf-8")
     pruefpunkte.schreibe_fragen(text, ziel)

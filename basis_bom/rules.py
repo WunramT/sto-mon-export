@@ -11,7 +11,13 @@ from sqlalchemy.engine import Engine
 
 BASIS, NICHT_BASIS, OFFEN = "BASIS", "NICHT_BASIS", "OFFEN"
 SYSTEMWERT = "vorhanden"  # D7: Wert eines Pseudo-Merkmals (Systemregel)
-SITZHOEHE = "SITZHOEHE"  # D3: numerischer Rang
+# D3: Merkmale mit numerischem Rang (niedrigster vorkommender Wert gewinnt). Explizite Liste, keine Namensheuristik:
+# Legacy-Name aus den Bedingungsnamen und SAP-Merkmal aus dem Quelltext (CUKN). Neue Namen hier eintragen.
+SITZHOEHE_MERKMALE = frozenset({"SITZHOEHE", "W_SITZHOEHE"})
+
+
+def ist_sitzhoehe(merkmal: str | None) -> bool:
+    return merkmal in SITZHOEHE_MERKMALE
 
 
 @dataclass(frozen=True)

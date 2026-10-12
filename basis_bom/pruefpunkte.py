@@ -1,4 +1,4 @@
-"""Prüfpunkte 1–8 aus docs/EXPORTE.md beim Laden beantworten und in docs/FRAGEN.md schreiben."""
+"""Prüfpunkte 1–11 aus docs/EXPORTE.md beim Laden beantworten und in docs/FRAGEN.md schreiben."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from pathlib import Path
 
 from . import config
 from .loader import MERKMALLISTE_DEFAULT, Ladeergebnis
+from .source import KNART_AUSWAHL
 
 START = "<!-- pruefpunkte:start -->"
 ENDE = "<!-- pruefpunkte:ende -->"
@@ -104,6 +105,8 @@ def berichte(erg: Ladeergebnis, kanonisch: set[str] | None = None) -> str:
                 f"10. **CUKB KNSTA × KNART (roh):** {vert} – freigegeben gilt derzeit nur KNSTA = 1 (Q6)."
             )
 
+    z.append(quelltext_abdeckung(erg))
+
     unbekannt = {t: p.unbekannte_spalten for t, p in erg.protokoll.items() if p.unbekannte_spalten}
     if unbekannt:
         z.append(f"\nUnbekannte Header (ins Mapping `basis_bom/headers.py` aufnehmen): {unbekannt}")
@@ -112,6 +115,31 @@ def berichte(erg: Ladeergebnis, kanonisch: set[str] | None = None) -> str:
                  f"{a['anzahl_nur_datei']} {a['nur_datei'][:5]}, nur berechnet {a['anzahl_nur_berechnet']} "
                  f"{a['nur_berechnet'][:5]}")  # fmt: skip
     return "\n".join(z)
+
+
+def quelltext_abdeckung(erg: Ladeergebnis) -> str:
+    """Prüfpunkt 11: Wie viele Auswahlbedingungen (KNNUM in CUKB) Quelltext in CUKN haben (D11, bedingung.py)."""
+    cukn = erg.tabellen.get("CUKN")
+    if cukn is None:
+        return ("11. **CUKN (Quelltext Beziehungswissen):** nicht geladen – alle Bedingungen werden aus dem Namen "
+                "(KNNAM) gelesen (Marker `cukn_fehlt`).")  # fmt: skip
+    cukb = erg.tabellen.get("CUKB")
+    if cukb is None or "KNNUM" not in cukb.columns:
+        return "11. **CUKN (Quelltext Beziehungswissen):** CUKB fehlt – Abdeckung nicht bestimmbar."
+    auswahl = cukb[cukb["KNART"].isin(KNART_AUSWAHL)] if "KNART" in cukb.columns else cukb
+    knnum = set(auswahl["KNNUM"]) - {""}
+    mit = cukn
+    if "KNBLK" in mit.columns:
+        mit = mit[mit["KNBLK"].astype(str).str.strip() != ""]
+    if "LKENZ" in mit.columns:
+        mit = mit[mit["LKENZ"].astype(str).str.strip() == ""]
+    mit_text = knnum & set(mit["KNNUM"]) if "KNNUM" in mit.columns else set()
+    ohne = sorted(knnum - mit_text, key=lambda k: (len(k), k))
+    p = erg.protokoll["CUKN"]
+    return (f"11. **CUKN (Quelltext Beziehungswissen):** {p.zeilen_roh} Zeilen roh, {p.zeilen_geladen} geladen "
+            f"({cukn['KNNUM'].nunique() if 'KNNUM' in cukn.columns else 0} Bausteine). Auswahlbedingungen in CUKB: "
+            f"{len(knnum)}, davon mit Quelltext {len(mit_text)}, ohne {len(ohne)}"
+            + (f" (Rückfall auf den Namen, z. B. {ohne[:10]})" if ohne else "") + ".")  # fmt: skip
 
 
 def schreibe_fragen(text: str, pfad: Path = config.FRAGEN_MD) -> None:

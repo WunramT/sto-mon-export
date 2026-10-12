@@ -26,7 +26,8 @@ def spur_lesbar(spur: dict) -> str:
             teile.append(f"{b['knnam']} [{b.get('rolle')}]")
             continue
         pr = ", ".join(f"{p['merkmal']}={p['wert']} {p['ergebnis']}" for p in b.get("pruefungen", []))
-        teile.append(f"{b['knnam']} → {pr or b.get('fehler') or 'keine Paare'}")
+        quelle = f" „{b['text']}“" if b.get("quelle") == "text" and b.get("text") else " (aus dem Namen)"
+        teile.append(f"{b['knnam']}{quelle} → {pr or b.get('fehler') or 'keine Paare'}")
     for p in spur.get("prozeduren", []):
         teile.append(f"Prozedur {p} ignoriert")
     gew = spur.get("gewaehlt") or {}

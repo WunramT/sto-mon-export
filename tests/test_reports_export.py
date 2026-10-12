@@ -47,7 +47,8 @@ def test_views(fixture_db):
             "SITZQUALI",
             "PP4000_KS_VERERBEN",
         }
-        assert q("SELECT * FROM basis_bom.prozeduren")[0]["prozedur"] == "PP_PREISFINDUNG"
+        prozeduren = {r["prozedur"] for r in q("SELECT * FROM basis_bom.prozeduren")}
+        assert {"PP_PREISFINDUNG", "WERK_SCHAUM_GET_WASTE", "PP4000_PIANKA_REG_110_OBLICZ"} <= prozeduren
         stat = q("SELECT * FROM basis_bom.statistik_lauf LIMIT 1")[0]
         assert stat["basis"] >= 5 and stat["roots_uebersprungen"] == 3
         abdeckung = {

@@ -1,7 +1,7 @@
 """Laden der SAP-Exporte nach `sap_raw` (AGENT-PLAN Phase 2, EXPORT-PLAN Phase 1 in Python).
 
 Reihenfolge ist zwingend, weil die Schlüsselmengen aufeinander aufbauen (EXPORT-PLAN Phase 1):
-MAST → S → STKO/STAS/STPO (chunkweise) → P, K → CUOB → W → CUKB/CUKBT → MARC → M → MARA/MAKT → CABN.
+MAST → S → STKO/STAS/STPO (chunkweise) → P, K → CUOB → W → CUKB/CUKBT/CUKN → MARC → M → MARA/MAKT → CABN.
 Gefiltert wird beim Laden, nicht danach. D14 (Gültigkeit) wendet erst `source.py` an; hier bleiben
 gelöschte und zukünftige Zeilen erhalten.
 """
@@ -35,6 +35,7 @@ MASSGEBLICH: dict[str, str] = {
     "CUOB": "EXPORT_20260512_153230_cuob.XLSX",
     "CUKB": "EXPORT_20260512_153418_CUKB.XLSX",
     "CUKBT": "EXPORT_CUKBT_20260923_150301.XLSX",
+    "CUKN": "EXPORT_CUKN_20261012_085449.xlsx",  # optional: Quelltext des Beziehungswissens
     "MARA": "EXPORT_mara_20260923_145220.XLSX",
     "MARC": "EXPORT_marc_20260923_141650.XLSX",
     "MAKT": "EXPORT_makt_20260923_144656.XLSX",
@@ -43,13 +44,14 @@ MASSGEBLICH: dict[str, str] = {
 ROOT_XLSX = "Kopie von 4000_STO_OKU_Alle Modelle_Planzeiten_Merkmal.xlsx"
 SCHLUESSEL_DATEIEN = {"S": "S.csv", "P_idnrk": "P_idnrk.csv", "M": "M.csv", "W": "W.csv"}
 
-LADE_REIHENFOLGE = ["MAST", "STKO", "STAS", "STPO", "CUOB", "CUKB", "CUKBT", "MARC", "MARA", "MAKT", "CABN",
-                    "CAWN", "CAWNT"]  # fmt: skip
+LADE_REIHENFOLGE = ["MAST", "STKO", "STAS", "STPO", "CUOB", "CUKB", "CUKBT", "CUKN", "MARC", "MARA", "MAKT",
+                    "CABN", "CAWN", "CAWNT"]  # fmt: skip
 
 # Führende Nullen einheitlich entfernen (Schlüssel und Zähler).
 NULLEN_WEG = {"MATNR", "IDNRK", "STLNR", "KNOBJ", "KNNUM", "STLAL", "STLKN", "STPOZ", "STASZ", "STKOZ",
-              "ADZHL", "KNSRT", "STLAN", "ATINN", "ATZHL"}  # fmt: skip
+              "ADZHL", "KNSRT", "STLAN", "ATINN", "ATZHL", "BLKNR"}  # fmt: skip
 DATUMSSPALTEN = {"DATUV"}
+OHNE_TRIM = {"KNBLK"}
 ZAHLSPALTEN = {"MENGE", "BMENG"}
 
 # Kanonische Merkmale (EXPORT-PLAN Phase 3), falls die Alias-Tabelle noch nicht geladen ist.
@@ -233,7 +235,8 @@ def normalisiere(df: pd.DataFrame, tabelle: str, prot: Protokoll) -> pd.DataFram
         if prot.fehlende_spalten:
             log.warning("%s: Spalten fehlen: %s", tabelle, prot.fehlende_spalten)
     for col in df.columns:
-        df[col] = df[col].astype(str).str.strip()
+        # Quelltext-Blöcke nur rechts kürzen: führende Leerzeichen gehören zum 72er-Zeilenraster (bedingung.py)
+        df[col] = df[col].astype(str).str.rstrip() if col in OHNE_TRIM else df[col].astype(str).str.strip()
     for col in NULLEN_WEG & set(df.columns):
         if prot.fuehrende_nullen is None and col in {"MATNR", "IDNRK", "STLNR"}:
             prot.fuehrende_nullen = bool(df[col].str.match(r"^0\d").any())
@@ -390,6 +393,8 @@ def lade_quellen(
     erg.schluessel["W"] = W
     lies("CUKB", filt=lambda d: _filter(d, KNNUM=W))
     lies("CUKBT", filt=lambda d: _filter(_filter(d, KNNUM=W), SPRAS=["D", "DE"]))
+    # Quelltext (optional): ohne CUKN werden Bedingungen wie bisher aus dem Namen gelesen (Marker cukn_fehlt)
+    lies("CUKN", filt=lambda d: _filter(d, KNNUM=W))
 
     marc = lies("MARC", filt=lambda d: _filter(d, WERKS=werks))
     M = set(erg.schluessel["P_idnrk"]) | set(mast["MATNR"]) | {ohne_nullen(m) for m in root_materialien}

@@ -3,6 +3,9 @@
 Gültigkeit (D14): Stichtag = Exportdatum. Zeilen mit `DATUV` > Stichtag existieren nicht. Bei versionierten
 Objekten gilt die neueste Version mit `DATUV` ≤ Stichtag (bei CUKB zusätzlich `KNSTA` = freigegeben);
 ist diese gelöscht (`LKENZ`), existiert das Objekt nicht. Siehe docs/FRAGEN.md zu dieser Lesart.
+
+Quelltext (CUKN, optional): je KNNUM die Version, die CUKB gewählt hat (gleicher `ADZHL`), sonst die neueste
+CUKN-Version mit `DATUV` ≤ Stichtag; ist sie gelöscht, hat der Baustein keinen Text (Rückfall auf den Namen).
 """
 
 from __future__ import annotations
@@ -15,7 +18,7 @@ import pandas as pd
 import sqlalchemy as sa
 from sqlalchemy.engine import Engine
 
-from . import config, headers
+from . import bedingung, config, headers
 
 log = logging.getLogger(__name__)
 
@@ -166,6 +169,10 @@ class SapSource:
             self.marker.add("mara_fehlt")
         if "MARC" not in self._roh:
             self.marker.add("marc_fehlt")
+        if "CUKN" not in self._roh:
+            self.marker.add("cukn_fehlt")
+            self.warnungen.append("CUKN (Quelltext des Beziehungswissens) fehlt – Bedingungen werden aus dem Namen "
+                                  "(KNNAM) gelesen")  # fmt: skip
         cukb = self._roh["CUKB"]
         if "KNART" not in cukb.columns or not _gesetzt(cukb["KNART"]).any():
             self.marker.add("knart_fehlt")  # D10: alle Beziehungen als Auswahlbedingungen
@@ -300,15 +307,55 @@ class SapSource:
         return set(self._roh["CUOB"]["KNOBJ"])
 
     @cached_property
+    def texte(self) -> dict[str, str]:
+        """KNNUM → Quelltext (CUKN, dekodiert). Ohne Eintrag: kein Text (fehlt, gelöscht, leer)."""
+        d = self._roh.get("CUKN")
+        if d is None or d.empty or "KNNUM" not in d.columns or "KNBLK" not in d.columns:
+            return {}
+        if "DATUV" in d.columns:
+            d = d[bis_stichtag(d["DATUV"], self.stichtag)]
+        leer = pd.Series("", index=d.index)
+        d = d.assign(_ad=d["ADZHL"] if "ADZHL" in d.columns else leer,
+                     _blk=d["BLKNR"] if "BLKNR" in d.columns else leer,
+                     _len=d["LAENGE"] if "LAENGE" in d.columns else leer,
+                     _loe=d["LKENZ"] if "LKENZ" in d.columns else leer)  # fmt: skip
+        cukb = self.cukb
+        version_cukb = dict(zip(cukb["KNNUM"], cukb["ADZHL"], strict=True)) if "ADZHL" in cukb.columns else {}
+        out: dict[str, str] = {}
+        for knnum, g in d.groupby("KNNUM", sort=False):
+            ad = version_cukb.get(knnum)
+            if ad is None or ad not in set(g["_ad"]):  # neueste CUKN-Version (DATUV, dann ADZHL)
+                rang = g.assign(_d=pd.to_datetime(g["DATUV"], errors="coerce") if "DATUV" in g.columns else pd.NaT,
+                                _z=pd.to_numeric(g["_ad"], errors="coerce"))  # fmt: skip
+                rang["_d"] = rang["_d"].fillna(pd.Timestamp.min)
+                ad = rang.sort_values(["_d", "_z"], kind="stable").iloc[-1]["_ad"]
+            v = g[g["_ad"] == ad]
+            if _gesetzt(v["_loe"]).any():
+                continue  # gelöschte Version: kein Text (D14)
+            text = bedingung.text_aus_bloecken(list(zip(v["_blk"], v["_len"], v["KNBLK"], strict=True)))
+            if text:
+                out[knnum] = text
+        return out
+
+    @cached_property
     def beziehungen(self) -> dict[str, dict]:
-        """KNNUM → {knnam, knart, adzhl} der gültigen CUKB-Version."""
+        """KNNUM → {knnam, knart, adzhl, text} der gültigen CUKB-Version; `text` = Quelltext (CUKN) oder None."""
         d = self.cukb
         knart = d["KNART"] if "KNART" in d.columns else pd.Series("", index=d.index)
         adzhl = d["ADZHL"] if "ADZHL" in d.columns else pd.Series("", index=d.index)
+        texte = self.texte
         return {
-            k: {"knnam": n, "knart": a, "adzhl": z}
+            k: {"knnam": n, "knart": a, "adzhl": z, "text": texte.get(k)}
             for k, n, a, z in zip(d["KNNUM"], d["KNNAM"], knart, adzhl, strict=True)
         }
+
+    def quelltext_abdeckung(self) -> dict:
+        """Wie viele gültige Auswahlbedingungen Quelltext (CUKN) haben; der Rest wird aus dem Namen gelesen."""
+        knart_fehlt = "knart_fehlt" in self.marker
+        auswahl = {k: b for k, b in self.beziehungen.items() if knart_fehlt or b["knart"] in KNART_AUSWAHL}
+        ohne = sorted((k for k, b in auswahl.items() if not b["text"]), key=lambda k: (len(k), k))
+        return {"cukn": "CUKN" in self._roh, "auswahl": len(auswahl), "mit_text": len(auswahl) - len(ohne),
+                "ohne_text": len(ohne), "ohne_beispiele": [f"{k} {auswahl[k]['knnam']}" for k in ohne[:10]]}  # fmt: skip
 
     @cached_property
     def knnum_roh(self) -> set[str]:

@@ -50,6 +50,9 @@ SPALTEN: dict[str, list[str]] = {
     "CUOB": ["KNTAB", "KNOBJ", "KNNUM", "KNSRT", "DATUV", "AENNR", "LKENZ"],
     "CUKB": ["KNNUM", "ADZHL", "KNNAM", "KNART", "KNSTA", "DATUV", "AENNR", "LKENZ"],
     "CUKBT": ["KNNUM", "SPRAS", "ADZHL", "KNKTX", "DATUV", "AENNR", "LKENZ"],
+    # Quelltext des Beziehungswissens: KNBLK = Datenblock (SAP-Feld), Blockzähler/Länge/Gültig bis unter
+    # angenommenen technischen Namen BLKNR/LAENGE/DATUB (im Export nur beschreibende Header, docs/EXPORTE.md)
+    "CUKN": ["KNNUM", "ADZHL", "BLKNR", "LKENZ", "AENNR", "DATUV", "DATUB", "LAENGE", "KNBLK"],
     "MARA": ["MATNR", "MATKL", "MTART", "KZKFG"],
     "MARC": ["MATNR", "WERKS", "DISPO", "SOBSL", "BESKZ"],
     "MAKT": ["MATNR", "SPRAS", "MAKTX"],
@@ -169,6 +172,15 @@ PRO_TABELLE: dict[str, dict[str, str]] = {
         "ZAEHLER": "ADZHL",
         "BEZEICHNUNG": "KNKTX",
     },  # vermutet
+    "CUKN": {
+        "INT ZAEHLER": "ADZHL",
+        "INTERNER ZAEHLER": "ADZHL",
+        "BLOCKZAEHLER WISSENSBAUSTEIN": "BLKNR",
+        "BLOCKZAEHLER": "BLKNR",
+        "GUELTIG BIS": "DATUB",
+        "BIN2 DATENELEMENT FUER SYST": "LAENGE",
+        "DATENBLOCK FUER WISSENSABLAGE": "KNBLK",
+    },  # belegt: EXPORT_CUKN_20261012_085449.xlsx
     "CABN": {
         "INT MERKMALSNUMMER": "ATINN",
         "INT MERKMALNUMMER": "ATINN",

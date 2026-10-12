@@ -435,3 +435,24 @@ def test_fundstellen_mit_kuerzel_im_entwurf(client):
     pos = mit["beziehungen"][0]["stuecklisten"][0]["positionen"]
     assert [(p["posnr"], p["matnr"]) for p in pos] == [("0060", "10000006")]
     assert [m["matnr"] for m in mit["modelle"]] == ["90000001"]
+
+
+def test_quelltext_in_material_fundstellen_und_meta(client):
+    """Bedingungen zeigen den Quelltext (CUKN) neben dem Namen; ohne Text: Rückfall auf den Namen."""
+    d = client.post("/api/material/90000007", json={"entwurf": None}).json()
+    pos = {p["posnr"]: p for p in d["positionen"]}
+    b = pos["0010"]["bedingungen"][0]
+    assert b["name"] == "RUECKEN_FUNK=X,FUNKTION=X" and b["quelle"] == "text"
+    assert b["text"] == "$parent.W_RUECKENVERST ='X' and $parent.W_FUNKTION = 'X'."
+    assert {p["merkmal"] for p in b["pruefungen"]} == {"W_RUECKENVERST", "W_FUNKTION"}
+    assert (pos["0070"]["bedingungen"][0]["text"], pos["0070"]["bedingungen"][0]["quelle"]) == (None, "name")
+    unlesbar = next(f for f in d["hinweise"] if f["schluessel"] == "unlesbar:PP2000_KLIPS_CNC<>X")
+    assert "prüft nur, ob ein Merkmal bewertet ist (specified)" in unlesbar["text"]
+    f = client.post("/api/fundstellen?merkmal=W_FUNKTION&wert=VZMO", json={"entwurf": None}).json()
+    assert [(x["knnam"], x["quelle"]) for x in f["beziehungen"]] == [("FUNK=VZMO_SITZHOEHE=45", "text"),
+                                                                      ("FUNKTION=VZMO", "text")]  # fmt: skip
+    assert f["beziehungen"][1]["text"] == "$parent.W_FUNKTION in ('VZMO')."  # Kommentarzeile entfernt
+    sq = client.post("/api/fundstellen?merkmal=SITZHOEHE&wert=46", json={"entwurf": None}).json()
+    assert [(x["knnam"], x["text"], x["quelle"]) for x in sq["beziehungen"]] == [("SH=46", None, "name")]
+    m = client.get("/api/meta").json()
+    assert m["quelltext"]["cukn"] and m["quelltext"]["mit_text"] == 17 and "cukn_fehlt" not in m["marker"]

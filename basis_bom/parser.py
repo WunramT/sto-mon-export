@@ -9,8 +9,12 @@ Portiert `parse_beziehung` aus legacy/basis_bom_v0.py mit diesen Änderungen:
 
 Syntax (aus den Legacy-Testfällen): Teile durch `,`; innerhalb eines Teils Tokens durch `_`. Token-Formen:
 `ALIAS=WERT`, `ALIAS_WERT` (z. B. `SITZQ_HR`), `SH48` (Sitzhöhen-Alias + Ziffern), `46` (zweistellige Zahl =
-SITZHOEHE, Legacy-Regel), `ALIAS WERT` als ganzer Name (z. B. `FUNKTION MANUEL`). Ein Wert endet vor dem
-nächsten `_`, hinter dem ein Token beginnt.
+Merkmal des Kürzels `SITZHOEHE`, Legacy-Regel Q14), `ALIAS WERT` als ganzer Name (z. B. `FUNKTION MANUEL`). Ein
+Wert endet vor dem nächsten `_`, hinter dem ein Token beginnt.
+
+Seit es den Quelltext (CUKN) gibt, ist dieser Parser nur Rückfallebene für Bausteine ohne Text
+(`bedingung.lies`). Alle Merkmalsnamen kommen über die Alias-Tabelle – nach `basis-bom regel umschluesseln` also
+dieselben SAP-Namen wie aus dem Text.
 """
 
 from __future__ import annotations
@@ -19,7 +23,7 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 
-from .rules import BASIS, SITZHOEHE, SYSTEMWERT, Alias
+from .rules import BASIS, SYSTEMWERT, Alias, ist_sitzhoehe
 
 NEGATION = re.compile(r"\bNICHT\b|\bNOT\b")  # Wortformen bleiben nicht parsbar (Syntax unklar)
 UNGLEICH = re.compile(r"\s*(<>|!=)\s*")
@@ -27,6 +31,8 @@ NICHT_GLEICH = "≠"  # Präfix eines Werts: Bedingung „Merkmal ≠ Wert“ (Q
 _UNBEKANNT_START = re.compile(r"[A-Z0-9][A-Z0-9_]*?(?==)")
 _UNBEKANNT_GRENZE = re.compile(r"[A-Z][A-Z0-9]*(?==)")
 _ZAHL2 = re.compile(r"\d{2}(?=_|$)")
+ZAHL_KUERZEL = "SITZHOEHE"  # zweistellige Zahl im Namen = Merkmal dieses Kürzels (Legacy-Regel Q14)
+_ZAHL = object()  # Marke im Tokenizer für die zweistellige Zahl
 
 
 @dataclass
@@ -38,6 +44,7 @@ class ParseErgebnis:
     parsbar: bool = True
     systemregel: bool = False
     fehler: str | None = None
+    quelle: str = "name"  # name (CUKB.KNNAM) | text (Quelltext CUKN, bedingung.py)
 
     @property
     def klasse(self) -> str:
@@ -57,7 +64,10 @@ class Parser:
     def __init__(self, aliasse: Iterable[Alias]) -> None:
         self.aliasse = sorted(aliasse, key=lambda a: (-len(a.alias), a.alias))
         self._namen = {a.alias for a in self.aliasse}
-        self._sh = [a for a in self.aliasse if a.merkmal == SITZHOEHE and a.status == BASIS]
+        self._sh = [a for a in self.aliasse if a.merkmal and ist_sitzhoehe(a.merkmal) and a.status == BASIS]
+        zahl = next((a for a in self.aliasse if a.alias == ZAHL_KUERZEL), None)
+        # über die Alias-Tabelle, damit nach der Umschlüsselung derselbe (SAP-)Name herauskommt wie aus dem Text
+        self._zahl_merkmal = zahl.merkmal if zahl and zahl.merkmal and zahl.status == BASIS else ZAHL_KUERZEL
         self._cache: dict[str, ParseErgebnis] = {}
 
     # -----------------------------------------------------------------------------------------------------
@@ -96,7 +106,7 @@ class Parser:
         return erg
 
     # -----------------------------------------------------------------------------------------------------
-    def _token(self, s: str, i: int, an_grenze: bool) -> tuple[Alias | str, int] | None:
+    def _token(self, s: str, i: int, an_grenze: bool) -> tuple[Alias | str | object, int] | None:
         """Token ab Position i: (Alias oder unbekannter Schlüssel, Start des Werts) oder None."""
         for a in self.aliasse:
             if s.startswith(a.alias + "=", i):
@@ -111,7 +121,7 @@ class Parser:
             if s.startswith(a.alias, i) and re.match(r"\d{2,3}(?=_|$)", s[i + len(a.alias) :]):
                 return a, i + len(a.alias)
         if _ZAHL2.match(s, i):
-            return SITZHOEHE, i
+            return _ZAHL, i
         m = (_UNBEKANNT_GRENZE if an_grenze else _UNBEKANNT_START).match(s, i)
         if m:
             return "?" + m.group(0), m.end() + 1
@@ -136,8 +146,8 @@ class Parser:
                 self._fehler(erg, f"unverständlich ab {s[i:]!r}")
                 return False
             ziel, j = tok
-            if ziel == SITZHOEHE:  # zweistellige Zahl (Legacy-Regel)
-                wert, i = s[j : j + 2], j + 2
+            if ziel is _ZAHL:  # zweistellige Zahl (Legacy-Regel)
+                ziel, wert, i = self._zahl_merkmal, s[j : j + 2], j + 2
             else:
                 wert, i = self._wert(s, j)
             wert = wert.strip("_")

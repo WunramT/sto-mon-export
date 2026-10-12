@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 import sqlalchemy as sa
 from sqlalchemy.engine import Engine
 
-from . import lauf, rules
+from . import bedingung, lauf, rules
 from .explode import (
     AUSGESCHLOSSEN,
     AUSGESCHLOSSEN_VERERBT,
@@ -54,13 +54,29 @@ FEHLER_TEXT = {
     "leerzeichen": "hat eine unbekannte Schreibweise",
     "keine paare": "enthält keine erkennbaren Merkmale",
 }  # fmt: skip
+# Gründe des Bedingungs-Parsers (Quelltext CUKN, bedingung.py)
+FEHLER_PRAEFIX = [
+    ("ODER über verschiedene Merkmale", "verknüpft verschiedene Merkmale mit ODER und kann nicht automatisch "
+                                        "ausgewertet werden"),
+    ("ODER", "enthält ein ODER, das sich nicht als Werteliste eines Merkmals lesen lässt"),
+    ("specified", "prüft nur, ob ein Merkmal bewertet ist (specified)"),
+    ("Vergleich zweier Merkmale", "vergleicht zwei Merkmale miteinander"),
+    ("Vergleich", "enthält einen Größenvergleich (>, <)"),
+    ("Funktion", "ruft eine Funktion auf"),
+    ("TABLE", "liest eine Variantentabelle"),
+    ("Zuweisung", "enthält Zuweisungen (Prozedur-Syntax)"),
+    ("Wert", "enthält einen Wert mit / oder +"),
+]  # fmt: skip
 
 
 def _fehler_text(f: str) -> str:
     if f in FEHLER_TEXT:
         return FEHLER_TEXT[f]
-    if f.startswith("unverständlich"):
+    if f.startswith("unverständlich") or f.startswith("Syntax") or f.startswith("unbekanntes Zeichen"):
         return "hat eine unbekannte Schreibweise"
+    for anfang, text in FEHLER_PRAEFIX:
+        if f.startswith(anfang):
+            return text
     return "kann nicht gelesen werden"
 
 
@@ -280,7 +296,7 @@ class Dienst:
                         bez = self.src.beziehungen.get(knnum)
                         if not bez or not (a.knart_fehlt or bez["knart"] in KNART_AUSWAHL):
                             continue  # Prozeduren wirken nicht auf die Auswahl (werden ignoriert)
-                        e = a.parser.parse(bez["knnam"])
+                        e = a.lies(bez)
                         if e.fehler:
                             u_hier.add(bez["knnam"])
                             fehler[bez["knnam"]] = e.fehler
@@ -342,7 +358,7 @@ class Dienst:
         ohne_basis: dict[str, set[str]] = {}
         for stlnr, d in vk["pro_stl"].items():
             for m, ws in d.items():
-                if m == rules.SITZHOEHE:
+                if rules.ist_sitzhoehe(m):
                     continue
                 st = {w: rs.status(m, w) for w in ws}
                 o = {w for w, x in st.items() if x in (None, rules.OFFEN)}
@@ -387,6 +403,7 @@ class Dienst:
         rs = self.regelstand()
         return {
             "stichtag": str(s.stichtag), "marker": sorted(s.marker), "warnungen": s.warnungen,
+            "quelltext": s.quelltext_abdeckung(),
             "regel_version": str(rs.version) if rs.version else None,
             "regeln": len(rs.regeln), "offen": self.offene_fragen(), "namen": self.merkmal_namen(),
             "merkmale": sorted({m for m, _ in rs.regeln} | {al.merkmal for al in rs.aliasse.values() if al.merkmal}),
@@ -489,7 +506,8 @@ class Dienst:
             bed = []
             for b in sp.get("beziehungen", []):
                 bed.append({
-                    "name": b["knnam"], "rolle": b.get("rolle"), "fehler": b.get("fehler"),
+                    "name": b["knnam"], "text": b.get("text"), "quelle": b.get("quelle", "name"),
+                    "rolle": b.get("rolle"), "fehler": b.get("fehler"),
                     "unbekannte_kuerzel": b.get("unbekannte_aliasse", []),
                     "offene_kuerzel": b.get("offene_aliasse", []),
                     "pruefungen": [{"merkmal": p["merkmal"], "wert": p["wert"], "ergebnis": p["ergebnis"],
@@ -571,7 +589,7 @@ class Dienst:
             key=lambda e: ({"BASIS": 0, "OFFEN": 1, "NICHT_BASIS": 2}[e["status"]], e["rang"] or 0, e["wert"])
         )
         return {"merkmal": m, "name": (namen or {}).get(m, m), "systemregel": [e["wert"] for e in eintraege] == [rules.SYSTEMWERT],
-                "sitzhoehe": m == rules.SITZHOEHE, "werte": eintraege}  # fmt: skip
+                "sitzhoehe": rules.ist_sitzhoehe(m), "werte": eintraege}  # fmt: skip
 
     # ---------------------------------------------------------------------------------------------------------
     def regeln(self, q: str = "", nur_offen: bool = False, entwurf: Entwurf | None = None) -> dict:
@@ -640,7 +658,7 @@ class Dienst:
                 for knnum in self.src.knnum_pro_knobj.get(knobj, []):
                     bez = self.src.beziehungen.get(knnum)
                     if bez:
-                        e = a.parser.parse(bez["knnam"])
+                        e = a.lies(bez)
                         ms |= {m for m, _ in e.paare} | set(e.unbekannte_aliasse) | set(e.offene_aliasse)
             if ms:
                 out[stlnr] = ms
@@ -714,8 +732,9 @@ class Dienst:
             liste = [{"stlnr": k, "kopf": [{"matnr": m, "kurztext": kt.get(m, ""), "root": m in root_set}
                                            for m in kopf.get(k, [])], "positionen": stl[k]}
                      for k in sorted(stl, key=nr)[:grenze]]  # fmt: skip
-            beziehungen.append({"knnum": knnum, "knnam": self.src.beziehungen[knnum]["knnam"],
-                                "anzahl": len(stl), "stuecklisten": liste})  # fmt: skip
+            bez = self.src.beziehungen[knnum]
+            beziehungen.append({"knnum": knnum, "knnam": bez["knnam"], "text": bez.get("text"),
+                                "quelle": bedingung.quelle(bez), "anzahl": len(stl), "stuecklisten": liste})  # fmt: skip
         beziehungen.sort(key=lambda b: (-b["anzahl"], b["knnam"], b["knnum"]))
         erreicht = self._root_stuecklisten()
         modelle = [{"matnr": r, "kurztext": kt.get(r, ""), "ausgeschlossen": r in aus,

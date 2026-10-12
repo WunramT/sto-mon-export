@@ -151,6 +151,52 @@ def regel_alias(
     typer.echo(f"Alias {alias.upper()} → {merkmal.upper() if merkmal else '–'} ({status.upper()})")
 
 
+@regel_app.command("umschluesseln")
+def regel_umschluesseln(
+    ausfuehren: bool = typer.Option(False, "--ausfuehren", help="Zuordnung anwenden (sonst nur Vorschau)"),
+    zuordnung: list[str] | None = typer.Option(
+        None, "--zuordnung", help="ALT=NEU, mehrfach; ergänzt/überschreibt die abgeleitete Zuordnung"
+    ),
+    belege: int = typer.Option(3, "--belege", help="Beispiele je Zuordnung in der Vorschau"),
+    von: str = typer.Option("mensch", "--von", help="wer ändert"),
+) -> None:
+    """Regeln, Kürzel und Anzeigenamen von Legacy-Merkmalen auf SAP-Merkmale (Quelltext CUKN) umschlüsseln.
+
+    Ohne `--ausfuehren` nur Vorschau mit Belegen, z. B. `basis-bom regel umschluesseln --zuordnung FUNKTION=W_FUNKTION`.
+    """
+    from . import rules
+    from . import umschluesseln as um
+    from .source import SapSource
+
+    eng = db.engine()
+    rs = rules.lade_regelstand(eng)
+    try:
+        manuell = um.lies_zuordnung(zuordnung)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from None
+    v = um.leite_ab(SapSource.from_db(eng), rs)
+    typer.echo(um.vorschau_text(v, rs, belege, manuell))
+    ziel = {**v.zuordnung, **manuell}
+    if not ausfuehren:
+        typer.echo("\nNur Vorschau. Anwenden: basis-bom regel umschluesseln --ausfuehren"
+                   + "".join(f" --zuordnung {a}={n}" for a, n in sorted(manuell.items())))  # fmt: skip
+        return
+    if not ziel:
+        typer.echo("\nNichts umzuschlüsseln.")
+        return
+    b = um.fuehre_aus(eng, ziel, von)
+    typer.echo(f"\nUmgeschlüsselt ({um.BEGRUENDUNG}): {len(b.regeln)} Regeln, {len(b.aliasse)} Kürzel, "
+               f"{len(b.namen)} Anzeigenamen; {len(b.konflikte)} Konflikte")  # fmt: skip
+    for alt, neu, wert, status, rang in b.regeln:
+        typer.echo(f"  Regel {alt}={wert} → {neu}={wert} ({status}{f' {rang}' if rang else ''})")
+    for alias, alt, neu in b.aliasse:
+        typer.echo(f"  Kürzel {alias}: {alt} → {neu}" if alias != neu else f"  Kürzel {neu} neu (auf sich selbst)")
+    for alt, neu, name in b.namen:
+        typer.echo(f"  Anzeigename „{name}“: {alt} → {neu}")
+    for k in b.konflikte:
+        typer.echo(f"  KONFLIKT {k}")
+
+
 @app.command()
 def roots(beispiele: int = typer.Option(5, "--beispiele", help="Beispiel-Materialien je Grund")) -> None:
     """Warum Root-Materialien nicht aufgelöst werden: Anzahl je Grund mit Beispielen."""

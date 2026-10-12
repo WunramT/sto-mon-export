@@ -35,4 +35,5 @@ SELECT v.alias, v.merkmal, v.status, 'seed' FROM (VALUES
     ('E', 'ELEKTRO', 'BASIS'),
     ('F', 'FUNKTION', 'BASIS')
 ) AS v(alias, merkmal, status)
-WHERE NOT EXISTS (SELECT 1 FROM basis_bom.alias x WHERE x.alias = v.alias AND x.gueltig_bis IS NULL);
+-- Nur, wenn es das Kürzel nie gab (historisierte Änderungen, D21, bleiben bestehen).
+WHERE NOT EXISTS (SELECT 1 FROM basis_bom.alias x WHERE x.alias = v.alias);

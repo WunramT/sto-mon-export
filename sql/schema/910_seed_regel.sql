@@ -24,6 +24,7 @@ SELECT v.merkmal, v.wert, v.status, v.rang, v.begruendung, 'seed' FROM (VALUES
     ('ARM_R',         'X',      'BASIS', 1,    'Legacy MANUAL_DEFAULTS: Standard-Armlehne'),
     ('ARM_R',         'LAL',    'OFFEN', NULL, 'Legacy auskommentiert')
 ) AS v(merkmal, wert, status, rang, begruendung)
+-- Nur, wenn es den Wert nie gab: eine geschlossene Zeile (z. B. nach `basis-bom regel umschluesseln`) bleibt zu.
 WHERE NOT EXISTS (
-    SELECT 1 FROM basis_bom.regel r WHERE r.merkmal = v.merkmal AND r.wert = v.wert AND r.gueltig_bis IS NULL
+    SELECT 1 FROM basis_bom.regel r WHERE r.merkmal = v.merkmal AND r.wert = v.wert
 );

@@ -31,6 +31,7 @@ basis-bom check                                 # Konsistenz- und Exportprüfung
 basis-bom export [--lauf N] [--matnr …]         # SAP-Format (D19)
 basis-bom regress [--lauf N]
 basis-bom regel liste [MERKMAL] | regel setzen … | regel alias …
+basis-bom regel umschluesseln [--zuordnung ALT=NEU] [--ausfuehren]   # Legacy- → SAP-Merkmale (Quelltext CUKN)
 basis-bom sql "<SELECT …>" [--csv datei]
 pytest                                          # Tests Fachlogik + API (eigene Datenbank <name>_test)
 cd frontend && npm run lint && npm run type-check && npm run test:run   # Frontend
@@ -45,7 +46,9 @@ Urteilen: `notebooks/90_debug_material.ipynb` (Materialnummer eintragen, alles a
 |---|---|
 | `basis_bom/loader.py`, `headers.py` | Exporte lesen, Header mappen, beim Laden filtern (Schlüsselmengen) |
 | `basis_bom/source.py` | Lesezugriff `sap_raw` mit Stichtag (D14), Ersatzmarker |
-| `basis_bom/rules.py`, `parser.py`, `ranking.py` | Regelstand, Bedingungsnamen, Entscheidung pro Ebene |
+| `basis_bom/rules.py`, `parser.py`, `ranking.py` | Regelstand, Bedingungsnamen (Rückfall), Entscheidung pro Ebene |
+| `basis_bom/bedingung.py` | Quelltext des Beziehungswissens (CUKN) dekodieren und lesen; Wahl Text/Name (`lies`) |
+| `basis_bom/umschluesseln.py` | `basis-bom regel umschluesseln`: Regeln/Kürzel von Legacy- auf SAP-Merkmale (aus Name ↔ Text) |
 | `basis_bom/explode.py`, `lauf.py`, `pipeline.py` | Auflösung mit Spur, Lauf speichern, Prototyp-Lauf |
 | `basis_bom/export.py`, `regress.py` | SAP-Format, Regression |
 | `basis_bom/dienst.py` | Logik der Web-Oberfläche: Material rechnen mit Regel-Entwurf, Auswirkung, Übernehmen, Review |

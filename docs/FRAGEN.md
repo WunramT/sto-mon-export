@@ -236,3 +236,45 @@ Regelinhalte entscheidet der Fachbereich; die Anwendung stellt nur die Mechanik.
 - **Bewertung:** Momentaufnahme je Speichern (Lauf + Pfad je Zeile); bestätigen nur, wenn alle Zeilen „richtig“
   sind und sich kein Status seitdem geändert hat. Ergänzte Materialien (mit Menge und Einheit) verhindern die
   Bestätigung, bis sie wieder entfernt oder die Regeln angepasst sind.
+
+## Quelltext des Beziehungswissens (CUKN, 2026-10-12)
+
+Merkmale und Werte einer Auswahlbedingung kommen jetzt aus dem Quelltext (`EXPORT_CUKN_20261012_085449.xlsx`), der
+Name `CUKB.KNNAM` ist nur noch Rückfall für Bausteine ohne Text (`basis_bom/bedingung.py`, Format in
+`docs/EXPORTE.md`). Ranking und Auflösung sind unverändert: der Text wird in dieselben (Merkmal, Wert)-Paare
+übersetzt wie bisher der Name.
+
+- **Q50 Lesart des Quelltexts.** `M = 'v'`/`EQ` → M=v; `M IN ('a','b')` → M=a/b (Multi-Wert, D5); `M <> 'v'`/`NE`/
+  `NOT M = 'v'` → M≠v (Q47); `NOT M IN ('a','b')` → M≠a/b (das Ranking wertet „≠a/b“ jetzt auch dann als „passt
+  nicht“, wenn ein anderer Teilwert unbekannt ist). `$PARENT.X`, `$SELF.X`, `$ROOT.X`, `$PARENT X` und `X` gelten
+  gleich (Merkmal X). Werte werden wie bei den Namen groß geschrieben. Version: die von CUKB gewählte (`ADZHL`), sonst
+  die neueste ≤ Stichtag; gelöscht → kein Text. Passt das, insbesondere `$SELF`/`$ROOT` wie `$PARENT`?
+- **Q51 Nicht auswertbar → `manuell_prüfen` (D11).** ODER wird nur zwischen Gleichheits-/IN-Vergleichen *desselben*
+  Merkmals zu einem Multi-Wert (`PP4000_PIANKA_T25_WYBOR`: `SCH_ART = 'T25' or SCH_ART = 'PU2528'` → SCH_ART =
+  T25/PU2528). Nicht ausgewertet werden ODER über verschiedene Merkmale, `specified`, Größenvergleiche
+  (`>`, `<`, `>=`, `<=`), Funktionen, `TABLE` und Zuweisungen. Folgen auf den echten Daten:
+  `PP2000_KLIPS_CNC<>X` (Text `$PARENT.PP_KLIPS_CNC specified or $PARENT.PP_KLIPS_MENGE > 0.`) war über den Namen
+  „≠X“ (Q47) und ist jetzt `manuell_prüfen`. Bausteine, deren Name eine Systemregel war (D7), werden über die
+  Merkmale des Texts entschieden – eine Entscheidung zur Systemregel wirkt dort nicht mehr
+  (`basis-bom regel umschluesseln` listet sie). Aus Text entstehen keine Systemregel-Pseudo-Merkmale.
+  Soll `M specified` als „M hat irgendeinen Wert“ ausgewertet werden, und wie der Fall `… or MENGE > 0`?
+- **Q52 Umschlüsselung auf SAP-Merkmale.** Der Text nennt SAP-Merkmale (`W_FUNKTION`, `W_RUECKENVERST`,
+  `W_SITZHOEHE` …), Regeln/Kürzel/Anzeigenamen hängen an Legacy-Namen (`FUNKTION`, `RUECKEN_FUNK`, `SITZHOEHE`).
+  Bis zur Umschlüsselung haben die SAP-Merkmale keine Regeln (→ `kein_rang_fuer`, manuell). Ablauf:
+  `basis-bom regel umschluesseln` zeigt die aus den Daten abgeleitete Zuordnung mit Belegen (je Baustein Name ↔ Text,
+  gleiche Werte gepaart; kommt ein Wert mehrfach vor, z. B. `RUECKEN_FUNK=X,FUNKTION=X`, über die Reihenfolge –
+  so gekennzeichnet). Vorgeschlagen wird nur Eindeutiges; mehrdeutige Merkmale werden gemeldet und mit
+  `--zuordnung ALT=NEU` festgelegt. `--ausfuehren` schlüsselt historisiert um (D21, Begründung „Umschlüsselung auf
+  SAP-Merkmal (Quelltext CUKN)“): Regeln ALT=Wert → NEU=Wert (eine automatisch beobachtete OFFEN-Regel NEU=Wert wird
+  ersetzt; weicht eine vorhandene Entscheidung ab oder ist der Rang belegt → Konflikt, übersprungen), alle Kürzel
+  mit Merkmal ALT → NEU, NEU bekommt ein Kürzel auf sich selbst, der Anzeigename wird übernommen. Der Name-Parser
+  liefert danach über die Kürzel dieselben SAP-Namen, auch für die zweistellige Zahl (Merkmal des Kürzels
+  `SITZHOEHE`, Q14). Sitzhöhe (D3) ist eine feste Liste `rules.SITZHOEHE_MERKMALE` = {SITZHOEHE, W_SITZHOEHE} – ein
+  anderer SAP-Name müsste dort ergänzt werden. Die Seeds (`900`/`910`) legen Regeln und Kürzel nur noch an, wenn es
+  sie nie gab (sonst kämen umgeschlüsselte Legacy-Regeln beim nächsten `db init` zurück). Offen: Sind die
+  abgeleiteten Zuordnungen fachlich richtig (z. B. RUECKEN_FUNK → W_RUECKENVERST)? Gespeicherte Entwürfe und
+  `loader.MERKMALLISTE_DEFAULT` (Prüfpunkt 6) nennen weiter Legacy-Namen.
+- **Q53 Abdeckung CUKN.** Der Export enthält 130 Bausteine – laut Fachbereich alle 130 verschiedenen KNNUM aus W
+  (W.csv hat Duplikate). Prüfpunkt 11 im generierten Abschnitt zählt nach jedem Laden, wie viele Auswahlbedingungen
+  Text haben und wie viele aus dem Namen gelesen werden; erwartet auf den Dev-Daten: 130/130. Hinweis: CUKN trägt
+  das Datum 2026-10-12, damit ist der Dev-Stichtag (jüngstes Exportdatum) jetzt der 12.10. statt des 23.09.

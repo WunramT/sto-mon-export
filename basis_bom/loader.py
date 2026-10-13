@@ -412,7 +412,7 @@ def lade_quellen(
         log.warning("CABN: Spalte ATINN/ATNAM fehlt – CAWN/CAWNT nicht filterbar, Marker cawn_fehlt bleibt")
     elif cabn is not None:
         A = set(cabn.loc[cabn["ATNAM"].str.upper().isin(merkmale), "ATINN"])
-        log.info("CABN: %s von %s kanonischen Merkmalen gefunden", cabn["ATNAM"].str.upper().isin(merkmale).sum(),
+        log.info("CABN: %s von %s kanonischen Merkmalen gefunden", len(set(cabn["ATNAM"].str.upper()) & merkmale),
                  len(merkmale))  # fmt: skip
         erg.schluessel["A"] = A
         lies("CAWN", filt=lambda d: _filter(d, ATINN=A))

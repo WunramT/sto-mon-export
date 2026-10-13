@@ -1,4 +1,5 @@
-"""Fachliche Endpunkte: Materialien, Stückliste mit Regel-Entwurf, Regeln, Fundstellen, Auswirkung, Übernehmen, Review, Export.
+"""Fachliche Endpunkte: Materialien, Stückliste mit Regel-Entwurf, Regeln, Fundstellen, Auswirkung, Übernehmen,
+Review, Export.
 
 Nur Durchreichen – die Logik steckt in `basis_bom.dienst` (dieselbe wie `basis-bom run`).
 """

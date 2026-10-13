@@ -175,7 +175,7 @@ def regel_umschluesseln(
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from None
     v = um.leite_ab(SapSource.from_db(eng), rs)
-    typer.echo(um.vorschau_text(v, rs, belege, manuell))
+    typer.echo(um.vorschau_text(v, rs, belege, manuell, um.beobachtete_werte(eng)))
     ziel = {**v.zuordnung, **manuell}
     if not ausfuehren:
         typer.echo("\nNur Vorschau. Anwenden: basis-bom regel umschluesseln --ausfuehren"
@@ -186,9 +186,12 @@ def regel_umschluesseln(
         return
     b = um.fuehre_aus(eng, ziel, von)
     typer.echo(f"\nUmgeschlüsselt ({um.BEGRUENDUNG}): {len(b.regeln)} Regeln, {len(b.aliasse)} Kürzel, "
-               f"{len(b.namen)} Anzeigenamen; {len(b.konflikte)} Konflikte")  # fmt: skip
+               f"{len(b.namen)} Anzeigenamen; {len(b.verworfen)} nur beobachtete Werte entfallen; "
+               f"{len(b.konflikte)} Konflikte")  # fmt: skip
     for alt, neu, wert, status, rang in b.regeln:
         typer.echo(f"  Regel {alt}={wert} → {neu}={wert} ({status}{f' {rang}' if rang else ''})")
+    for alt, wert in b.verworfen:
+        typer.echo(f"  Entfällt {alt}={wert} (nur beobachtet)")
     for alias, alt, neu in b.aliasse:
         typer.echo(f"  Kürzel {alias}: {alt} → {neu}" if alias != neu else f"  Kürzel {neu} neu (auf sich selbst)")
     for alt, neu, name in b.namen:

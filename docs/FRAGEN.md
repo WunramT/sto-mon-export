@@ -266,7 +266,10 @@ Name `CUKB.KNNAM` ist nur noch Rückfall für Bausteine ohne Text (`basis_bom/be
   so gekennzeichnet). Vorgeschlagen wird nur Eindeutiges; mehrdeutige Merkmale werden gemeldet und mit
   `--zuordnung ALT=NEU` festgelegt. `--ausfuehren` schlüsselt historisiert um (D21, Begründung „Umschlüsselung auf
   SAP-Merkmal (Quelltext CUKN)“): Regeln ALT=Wert → NEU=Wert (eine automatisch beobachtete OFFEN-Regel NEU=Wert wird
-  ersetzt; weicht eine vorhandene Entscheidung ab oder ist der Rang belegt → Konflikt, übersprungen), alle Kürzel
+  ersetzt; weicht eine vorhandene Entscheidung ab oder ist der Rang belegt → Konflikt, übersprungen; nur
+  beobachtete Werte ALT=Wert – OFFEN mit Begründung „automatisch: im Lauf beobachtet“ – ziehen nicht um, weil der
+  Name-Parser dort auch Unsinn wie `RUECKEN_FUNK=SITZHOEHE=45` eingetragen hat; echte Werte trägt der nächste Lauf
+  aus dem Text wieder ein), alle Kürzel
   mit Merkmal ALT → NEU, NEU bekommt ein Kürzel auf sich selbst, der Anzeigename wird übernommen. Der Name-Parser
   liefert danach über die Kürzel dieselben SAP-Namen, auch für die zweistellige Zahl (Merkmal des Kürzels
   `SITZHOEHE`, Q14). Sitzhöhe (D3) ist eine feste Liste `rules.SITZHOEHE_MERKMALE` = {SITZHOEHE, W_SITZHOEHE} – ein

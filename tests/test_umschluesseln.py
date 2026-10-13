@@ -43,7 +43,7 @@ def test_vorschau_aus_fixtures(vorschau):
     assert [s["knnum"] for s in v.systemregeln] == ["544"]  # PP4000_PIANKA_T25_WYBOR → SCH_ART
     text = um.vorschau_text(v, rules.seed_regelstand(), manuell={"FUNKTION": "W_FUNKTION"})
     assert "RUECKEN_FUNK → W_RUECKENVERST  (2 Belege, davon 1 über die Reihenfolge)" in text
-    assert "Regeln: X BASIS 1, ST BASIS 2, KV OFFEN" in text and "FUNKTION → W_FUNKTION  (manuell" in text
+    assert "Regeln (ziehen um): X BASIS 1, ST BASIS 2, KV OFFEN" in text and "FUNKTION → W_FUNKTION  (manuell" in text
     assert "17 von 24 Auswahlbedingungen mit Text" in text
 
 
@@ -90,7 +90,7 @@ def test_cli_vorschau_aendert_nichts(fixture_db, monkeypatch, stand_sichern):
 
 def test_cli_ausfuehren(fixture_db, monkeypatch, stand_sichern):
     out = _cli(fixture_db, monkeypatch, "--ausfuehren", "--zuordnung", "FUNKTION=W_FUNKTION", "--von", "Test")
-    assert "10 Regeln, 16 Kürzel, 4 Anzeigenamen; 0 Konflikte" in out
+    assert "10 Regeln, 16 Kürzel, 4 Anzeigenamen; 0 nur beobachtete Werte entfallen; 0 Konflikte" in out
     rs = rules.lade_regelstand(fixture_db)
     assert rs.regel("W_FUNKTION", "MANUEL") == rules.Regel("W_FUNKTION", "MANUEL", "BASIS", 2)
     assert rs.regel("FUNKTION", "MANUEL") is None and rs.regel("W_RUECKENVERST", "X").rang == 1
@@ -132,3 +132,17 @@ def test_konflikte_und_offen_ziel(fixture_db, stand_sichern):
     assert rs.regel("W_FUNKTION", "X").status == "NICHT_BASIS"
     assert rs.regel("W_FUNKTION", "MANUEL") == rules.Regel("W_FUNKTION", "MANUEL", "BASIS", 2)
     assert rs.regel("W_RUECKENVERST", "ST").rang == 2 and rs.regel("RUECKEN_FUNK", "X") is not None
+
+
+def test_beobachtete_werte_entfallen(fixture_db, monkeypatch, stand_sichern):
+    """Vom Namen-Parser beobachtete OFFEN-Werte ziehen nicht ins SAP-Merkmal um (oft keine echten Werte)."""
+    rules.trage_offen_ein(fixture_db, [("RUECKEN_FUNK", "SITZHOEHE=45")], "lauf")
+    rules.setze_regel(fixture_db, "RUECKEN_FUNK", "KV", "OFFEN", geaendert_von="test")  # bewusst OFFEN → zieht um
+    assert ("RUECKEN_FUNK", "SITZHOEHE=45") in um.beobachtete_werte(fixture_db)
+    out = _cli(fixture_db, monkeypatch)
+    assert "nur beobachtet, entfallen (1): SITZHOEHE=45" in out
+    b = um.fuehre_aus(fixture_db, {"RUECKEN_FUNK": "W_RUECKENVERST"})
+    assert b.verworfen == [("RUECKEN_FUNK", "SITZHOEHE=45")]
+    rs = rules.lade_regelstand(fixture_db)
+    assert rs.regel("W_RUECKENVERST", "SITZHOEHE=45") is None and rs.regel("RUECKEN_FUNK", "SITZHOEHE=45") is None
+    assert rs.regel("W_RUECKENVERST", "KV").status == "OFFEN"

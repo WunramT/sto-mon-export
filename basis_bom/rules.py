@@ -11,6 +11,7 @@ from sqlalchemy.engine import Engine
 
 BASIS, NICHT_BASIS, OFFEN = "BASIS", "NICHT_BASIS", "OFFEN"
 SYSTEMWERT = "vorhanden"  # D7: Wert eines Pseudo-Merkmals (Systemregel)
+BEOBACHTET = "automatisch: im Lauf beobachtet"  # Begründung der automatisch eingetragenen OFFEN-Werte (D8)
 # D3: Merkmale mit numerischem Rang (niedrigster vorkommender Wert gewinnt). Explizite Liste, keine Namensheuristik:
 # Legacy-Name aus den Bedingungsnamen und SAP-Merkmal aus dem Quelltext (CUKN). Neue Namen hier eintragen.
 SITZHOEHE_MERKMALE = frozenset({"SITZHOEHE", "W_SITZHOEHE"})
@@ -154,12 +155,12 @@ def trage_offen_ein(eng: Engine, paare: Iterable[tuple[str, str]], geaendert_von
         res = con.execute(
             sa.text(
                 "INSERT INTO basis_bom.regel (merkmal, wert, status, begruendung, geaendert_von) "
-                "SELECT m, w, 'OFFEN', 'automatisch: im Lauf beobachtet', :v "
+                "SELECT m, w, 'OFFEN', :b, :v "
                 "FROM unnest(CAST(:m AS text[]), CAST(:w AS text[])) AS x(m, w) "
                 "WHERE NOT EXISTS (SELECT 1 FROM basis_bom.regel r WHERE r.merkmal = x.m AND r.wert = x.w "
                 "                  AND r.gueltig_bis IS NULL)"
             ),
-            {"m": [m for m, _ in werte], "w": [w for _, w in werte], "v": geaendert_von},
+            {"m": [m for m, _ in werte], "w": [w for _, w in werte], "b": BEOBACHTET, "v": geaendert_von},
         )
         return res.rowcount
 

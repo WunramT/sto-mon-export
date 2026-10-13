@@ -18,7 +18,7 @@ from sqlalchemy.engine import Engine
 from . import bedingung
 from .parser import Parser
 from .ranking import einzelwerte, negiert
-from .rules import BASIS, OFFEN, Regelstand
+from .rules import BASIS, BEOBACHTET, OFFEN, Regelstand
 from .source import KNART_AUSWAHL, SapSource
 
 BEGRUENDUNG = "Umschlüsselung auf SAP-Merkmal (Quelltext CUKN)"
@@ -133,7 +133,16 @@ class Bericht:
     )  # ALT, NEU, Wert, Status, Rang
     aliasse: list[tuple[str, str, str]] = field(default_factory=list)  # Kürzel, ALT, NEU
     namen: list[tuple[str, str, str]] = field(default_factory=list)  # ALT, NEU, Anzeigename
+    verworfen: list[tuple[str, str]] = field(default_factory=list)  # ALT, Wert: nur beobachtet, nicht übernommen
     konflikte: list[str] = field(default_factory=list)
+
+
+def beobachtete_werte(eng: Engine) -> set[tuple[str, str]]:
+    """(Merkmal, Wert) der gültigen Regeln, die nur automatisch beobachtet wurden (OFFEN, keine Entscheidung)."""
+    with eng.connect() as con:
+        return {(m, w) for m, w in con.execute(sa.text(
+            "SELECT merkmal, wert FROM basis_bom.regel WHERE gueltig_bis IS NULL AND status = :s AND begruendung = :b"),
+            {"s": OFFEN, "b": BEOBACHTET})}  # fmt: skip
 
 
 def lies_zuordnung(texte: list[str] | None) -> dict[str, str]:
@@ -152,7 +161,9 @@ def fuehre_aus(eng: Engine, zuordnung: dict[str, str], von: str = "mensch") -> B
     """Regeln, Kürzel und Anzeigenamen umschlüsseln – historisiert (D21), alles in einer Transaktion.
 
     Regeln: jede gültige Regel ALT=Wert wird geschlossen und als NEU=Wert neu angelegt (Begründung „Umschlüsselung
-    …“). Gibt es NEU=Wert schon mit einer Entscheidung (BASIS/NICHT_BASIS), die abweicht, oder ist der Rang in NEU
+    …“). Nur beobachtete Werte (OFFEN, Begründung `BEOBACHTET`) werden geschlossen, aber nicht übernommen: sie stammen
+    aus dem Namen-Parser und sind oft keine echten Werte (`SITZHOEHE=45` unter RUECKEN_FUNK); echte Werte trägt der
+    nächste Lauf aus dem Quelltext wieder als OFFEN ein. Gibt es NEU=Wert schon mit einer Entscheidung (BASIS/NICHT_BASIS), die abweicht, oder ist der Rang in NEU
     belegt → Konflikt, ALT=Wert bleibt. Eine automatisch beobachtete OFFEN-Regel NEU=Wert wird ersetzt.
     Kürzel: alle Aliasse mit Merkmal ALT zeigen danach auf NEU; NEU bekommt einen Alias auf sich selbst.
     Anzeigename: NEU bekommt den Anzeigenamen von ALT, wenn NEU noch keinen hat (ALT behält seinen – die Startwerte in
@@ -171,6 +182,10 @@ def fuehre_aus(eng: Engine, zuordnung: dict[str, str], von: str = "mensch") -> B
             aktiv = "gueltig_bis IS NULL"
             for rid, wert, status, rang, grund in q(con, "SELECT id, wert, status, rang, begruendung FROM basis_bom.regel "
                                                         f"WHERE merkmal = :m AND {aktiv} ORDER BY wert", m=alt).all():  # fmt: skip
+                if status == OFFEN and grund == BEOBACHTET:
+                    q(con, "UPDATE basis_bom.regel SET gueltig_bis = :t WHERE id = :i", t=t, i=rid)
+                    b.verworfen.append((alt, wert))
+                    continue
                 ziel = q(con, f"SELECT id, status, rang, gueltig_von FROM basis_bom.regel WHERE merkmal = :m AND "
                               f"wert = :w AND {aktiv}", m=neu, w=wert).first()  # fmt: skip
                 if ziel and ziel.status != OFFEN and (ziel.status, ziel.rang) != (status, rang):
@@ -224,9 +239,10 @@ def fuehre_aus(eng: Engine, zuordnung: dict[str, str], von: str = "mensch") -> B
 
 
 def vorschau_text(
-    v: Vorschau, regeln: Regelstand, belege: int = 3, manuell: dict[str, str] | None = None
+    v: Vorschau, regeln: Regelstand, belege: int = 3, manuell: dict[str, str] | None = None,
+    beobachtet: set[tuple[str, str]] | None = None,
 ) -> str:
-    manuell = manuell or {}
+    manuell, beobachtet = manuell or {}, beobachtet or set()
     z: list[str] = []
     a = v.abdeckung
     if not a.get("cukn"):
@@ -254,8 +270,12 @@ def vorschau_text(
         werte = sorted((r for r in regeln.regeln.values() if r.merkmal == alt),
                        key=lambda r: (r.status != BASIS, r.rang or 0, r.wert))  # fmt: skip
         kuerzel = sorted(al.alias for al in regeln.aliasse.values() if al.merkmal == alt)
-        texte = [f"{r.wert} {r.status}" + (f" {r.rang}" if r.rang else "") for r in werte]
-        z.append(f"      Regeln: {', '.join(texte) or '–'}")
+        texte = [f"{r.wert} {r.status}" + (f" {r.rang}" if r.rang else "") for r in werte
+                 if (alt, r.wert) not in beobachtet]  # fmt: skip
+        weg = [r.wert for r in werte if (alt, r.wert) in beobachtet]
+        z.append(f"      Regeln (ziehen um): {', '.join(texte) or '–'}")
+        if weg:
+            z.append(f"      nur beobachtet, entfallen ({len(weg)}): {', '.join(weg)}")
         z.append(f"      Kürzel: {', '.join(kuerzel) or '–'}")
     for neu, alts in v.zusammengefuehrt().items():
         z.append(

@@ -239,7 +239,7 @@ Regelinhalte entscheidet der Fachbereich; die Anwendung stellt nur die Mechanik.
 
 ## Quelltext des Beziehungswissens (CUKN, 2026-10-12)
 
-Merkmale und Werte einer Auswahlbedingung kommen jetzt aus dem Quelltext (`EXPORT_CUKN_20261012_085449.xlsx`), der
+Merkmale und Werte einer Auswahlbedingung kommen jetzt aus dem Quelltext (`EXPORT_CUKN_20261013_084659.xlsx`), der
 Name `CUKB.KNNAM` ist nur noch Rückfall für Bausteine ohne Text (`basis_bom/bedingung.py`, Format in
 `docs/EXPORTE.md`). Ranking und Auflösung sind unverändert: der Text wird in dieselben (Merkmal, Wert)-Paare
 übersetzt wie bisher der Name.
@@ -274,7 +274,8 @@ Name `CUKB.KNNAM` ist nur noch Rückfall für Bausteine ohne Text (`basis_bom/be
   sie nie gab (sonst kämen umgeschlüsselte Legacy-Regeln beim nächsten `db init` zurück). Offen: Sind die
   abgeleiteten Zuordnungen fachlich richtig (z. B. RUECKEN_FUNK → W_RUECKENVERST)? Gespeicherte Entwürfe und
   `loader.MERKMALLISTE_DEFAULT` (Prüfpunkt 6) nennen weiter Legacy-Namen.
-- **Q53 Abdeckung CUKN.** Der Export enthält 130 Bausteine – laut Fachbereich alle 130 verschiedenen KNNUM aus W
-  (W.csv hat Duplikate). Prüfpunkt 11 im generierten Abschnitt zählt nach jedem Laden, wie viele Auswahlbedingungen
-  Text haben und wie viele aus dem Namen gelesen werden; erwartet auf den Dev-Daten: 130/130. Hinweis: CUKN trägt
-  das Datum 2026-10-12, damit ist der Dev-Stichtag (jüngstes Exportdatum) jetzt der 12.10. statt des 23.09.
+- **Q53 Abdeckung CUKN.** Der erste Export (12.10.) war auf `W.csv` aus dem Notebook gefiltert (130 KNNUM) und
+  deckte nur 130 der 538 KNNUM ab, die der Loader berechnet (`Abgleich W` in `db init`). Neu exportiert am 13.10. mit
+  der Loader-Menge: 539 Zeilen. Prüfpunkt 11 im generierten Abschnitt zählt nach jedem Laden, wie viele
+  Auswahlbedingungen Text haben und wie viele aus dem Namen gelesen werden; erwartet: alle mit Text. Hinweis: CUKN
+  trägt das Datum 2026-10-13, damit ist der Dev-Stichtag (jüngstes Exportdatum) jetzt der 13.10. statt des 23.09.

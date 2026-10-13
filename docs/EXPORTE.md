@@ -13,7 +13,7 @@ Ablage außerhalb des Repos: `C:\Users\wunram\codebase\mlp_refa_sto_mon_export\e
 | CUOB | `EXPORT_20260512_153230_cuob.XLSX` | XLSX | beschreibend | 2026-05-12 | 780 KB | aktuell laut TW |
 | CUKB | `EXPORT_20260512_153418_CUKB.XLSX` | XLSX | beschreibend | 2026-05-12 | 40 KB | aktuell laut TW – `KNART` prüfen (Prüfpunkt 1) |
 | CUKBT | `EXPORT_CUKBT_20260923_150301.XLSX` | XLSX | beschreibend (vermutl.) | 2026-09-23 | 18 KB | KNNUM ∈ W |
-| CUKN | `EXPORT_CUKN_20261012_085449.xlsx` | XLSX | beschreibend (belegt) | 2026-10-12 | – | KNNUM ∈ W; **optional** – Quelltext des Beziehungswissens (unten) |
+| CUKN | `EXPORT_CUKN_20261013_084659.xlsx` | XLSX | beschreibend (belegt) | 2026-10-13 | – | KNNUM ∈ W; **optional** – Quelltext des Beziehungswissens (unten) |
 | MARA | `EXPORT_mara_20260923_145220.XLSX` | XLSX | beschreibend (vermutl.) | 2026-09-23 | 15 MB | MATNR ∈ M |
 | MARC | `EXPORT_marc_20260923_141650.XLSX` | XLSX | beschreibend (vermutl.) | 2026-09-23 | 15 MB | WERKS 4000 |
 | MAKT | `EXPORT_makt_20260923_144656.XLSX` | XLSX | beschreibend (vermutl.) | 2026-09-23 | 500 KB | MATNR ∈ M, SPRAS D |
@@ -46,8 +46,10 @@ Format des Datenblocks (aus den Daten belegt): 6-stellige Zeilenanzahl, dann Zei
 aufgefüllt), Länge = 6 + 72·n. Kommentarzeilen beginnen mit `*`. Dekodieren: `basis_bom/bedingung.py`
 (`dekodiere`, `text_aus_bloecken`; die Länge stellt am Blockende abgeschnittene Leerzeichen wieder her).
 Version (D14): je KNNUM die von CUKB gewählte Version (`ADZHL`), sonst die neueste CUKN-Version mit
-`DATUV` ≤ Stichtag; ist sie gelöscht, hat der Baustein keinen Text. Stand 12.10.2026: 130 Bausteine, je eine Zeile
-(Blockzähler 0, ADZHL 0, ohne Löschkennzeichen) – deckt alle 130 verschiedenen KNNUM aus W ab.
+`DATUV` ≤ Stichtag; ist sie gelöscht, hat der Baustein keinen Text. Stand 13.10.2026: 539 Zeilen für die 538 KNNUM, die der Loader als W
+berechnet. Der erste Export vom 12.10. (130 Bausteine) war auf `W.csv` aus dem Notebook gefiltert; das baut S aus der
+überholten `st_mast_202605111439.csv` und ist deshalb zu klein. Filtermengen für Exporte aus dem Loader nehmen, z. B.
+`basis-bom sql "SELECT knnum FROM sap_raw.cukb GROUP BY knnum ORDER BY knnum::bigint" --csv W_neu.csv`.
 
 Nach dem ersten Laden mit CUKN: `basis-bom regel umschluesseln` (Vorschau) und `--ausfuehren` – die Regeln hängen
 bisher an Legacy-Merkmalen (`FUNKTION`), der Text liefert die SAP-Merkmale (`W_FUNKTION`), docs/FRAGEN.md Q52.

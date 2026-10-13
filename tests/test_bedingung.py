@@ -181,7 +181,7 @@ def test_ohne_cukn_wie_bisher(erg):
 
 def test_cukn_aus_xlsx_mit_auffuellung(tmp_path):
     """Echtes Dateiformat: XLSX mit Kleinbuchstaben-Endung, SE16-Header, Zeilen auf 72 aufgefüllt."""
-    p = tmp_path / "EXPORT_CUKN_20261012_085449.xlsx"
+    p = tmp_path / "EXPORT_CUKN_20261013_084659.xlsx"
     daten = blk("$PARENT.W_FUNKTION = 'VZMO'", "AND", "$PARENT.W_SITZHOEHE = '45'.")
     pd.DataFrame({"Interne Nummer des Wissensbausteins": ["0000000542"], "int. Zähler": ["0"],
                   "Blockzähler Wissensbaustein": ["0"], "Löschkennzeichen": [""], "Änderungsnummer": [""],

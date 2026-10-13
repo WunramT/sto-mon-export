@@ -35,7 +35,7 @@ MASSGEBLICH: dict[str, str] = {
     "CUOB": "EXPORT_20260512_153230_cuob.XLSX",
     "CUKB": "EXPORT_20260512_153418_CUKB.XLSX",
     "CUKBT": "EXPORT_CUKBT_20260923_150301.XLSX",
-    "CUKN": "EXPORT_CUKN_20261012_085449.xlsx",  # optional: Quelltext des Beziehungswissens
+    "CUKN": "EXPORT_CUKN_20261013_084659.xlsx",  # optional: Quelltext des Beziehungswissens
     "MARA": "EXPORT_mara_20260923_145220.XLSX",
     "MARC": "EXPORT_marc_20260923_141650.XLSX",
     "MAKT": "EXPORT_makt_20260923_144656.XLSX",
